@@ -20,13 +20,13 @@ How it works:
 - The hash is looked up in a hash map with linear probing. A tile that isn't there yet is inserted in an empty slot, or takes the slot of a tile that was unused for `evictFrames` frames. The slot is also where the texels of the tile are in the lightmap, so 1 lookup gives the whole tile. Only the tiles that are seen get a place, at the resolution they are seen at.
 - The tiles of the 2 coarser levels above it are found or inserted too.
 - Every cell bids a random number on its texel, and only the highest bid of a texel traces this frame (the claim, select and trace passes). A texel that holds `accumulationMax` paths is converged and takes no more, so the cost follows the texels that are still converging, not the screen.
-- The winning cell traces `sampleCount` paths from its pixel. A path ends at its first hit, in the lighting the lightmap has there: the lightmap is its own radiance cache, so the bounces build up over the frames.
+- The winning cell traces `sampleCount` paths from its pixel. A path ends at its first hit, in the lighting the lightmap has there: the lightmap is its own radiance cache, so the bounces build up over the frames. If no tile is found at the hit point then it is created.
 - The result goes into the running average of the texel and of its coarser texels. A new texel starts from the lighting of the coarser one instead of from its first noisy sample.
 - The resolve looks up the texels of every pixel in the 2 levels around its level, interpolates the 4 nearest texels (never across faces) and blends the levels, or picks 1 by noise when TAA follows. A texel with few paths leans on the smoother coarser level.
 - A tile that is out of view keeps its lighting until its slot is needed. While the sun moves the texels hold a short history (`changeFrames`), and a dragged model only resets the texels it has influence on (around it and in its shadow).
 
-Object can be moved after clicking them, and the lightmap will update. The lightmap is also updated when the sun moves. Quality is lower while anything is moving. The lightmap might need a reset to remove artifacts. This part of the code can be improved.
-The sampling of the scene is done with raytracing and this is most of the cost. Other irradiance caching techniques have been added to compare cost / quality.
+Objects can be moved after clicking them, and the lightmap will update. The lightmap is also updated when the sun moves. Quality is lower while anything is moving. The lightmap might need a reset to remove artifacts. This part of the code can be improved.
+The sampling of the scene is done with raytracing and this is most of the cost. Other irradiance caching techniques have been added to compare cost / quality but they are in a more WIP state.
 
 ## Running
 
