@@ -33,6 +33,11 @@ struct Uniforms {
 	showTraceSamplesMax : f32,
 	//the cells that can trace per frame, see VirtualLightmap.update
 	traceCellsMax : f32,
+	//only the feed tiles instead of the lighting, see getFeedColor
+	showFeedTiles : f32,
+	//of the update, for showFeedTiles: the paths a feed texel holds and its size, see getFeedLevel
+	rayFeedPaths : f32,
+	feedTexelSize : f32,
 	//for rayTraceScene.wgsl, see Scene.bind
 	lightDirection : vec3<f32>,
 	modelCount : f32,
@@ -265,6 +270,38 @@ fn getTraceLoadColor(p: vec2<f32>, side: f32) -> vec3<f32> {
 	return vec3(wanted / max(uniforms.traceCellsMax, 1.));
 }
 
+//the unlit albedo of showFeedTiles
+const FEED_UNLIT = .04;
+
+/*
+showFeedTiles: the lighting of the feed texel of the pixel, the one a ray that hits here ends in or feeds when the
+tiles of the cells have no lighting (see getCachedLighting in updateVirtualLightmap.wgsl). The texel as it is, not
+interpolated, so its size shows.
+-no feed texel, or one without paths: the albedo unlit, dark
+-a texel that is still filling (less than rayFeedPaths paths): its lighting, more yellow the fewer paths it holds
+-a full one: its lighting, as the rays read it
+What is in view only has the paths of the frames before the cells had lighting there: after that the rays end in the
+tiles of the cells. Look at what was out of view before
+ */
+fn getFeedColor(surface: Surface, albedo: vec3<f32>) -> vec3<f32> {
+	let unlit = albedo * FEED_UNLIT;
+	let feedLevel = getFeedLevel();
+	let texel = getTexel(surface, feedLevel);
+	let tileIndex = findTile(surface.id, feedLevel | FEED_LEVEL, texel / TILE_SIZE);
+	if(tileIndex == TILE_NONE){
+		return unlit;
+	}
+	//the count without the lock bit of addTexelSample, its sign
+	let lighting = abs(unpackLighting(lightingBuffer[getTexelIndex(tileIndex, texel)]));
+	if(lighting.a == 0.){
+		return unlit;
+	}
+	let c = toneMap(albedo * lighting.rgb * uniforms.exposure);
+	//less yellow the more paths it holds
+	let missing = 1. - min(lighting.a / max(uniforms.rayFeedPaths, 1.), 1.);
+	return mix(c, vec3(1., 1., 0.), .5 * missing);
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	//before the other modes return, so it shows in all of them. The load only for the pixels of the square
@@ -293,6 +330,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	let surface = getSurface(model.x, model.y, worldPosition, normalDepth.xyz);
 
 	let levelF = getLevel(worldPosition, normalDepth.xyz);
+	if(uniforms.showFeedTiles > .5){
+		return vec4(getFeedColor(surface, albedo.xyz), 1.);
+	}
 	var lighting: vec4<f32>;
 	if(uniforms.stochasticLevel > .5){
 		lighting = getLightingStochastic(surface, levelF, getNoise(coord));

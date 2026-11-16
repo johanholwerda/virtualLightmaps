@@ -1,5 +1,5 @@
 //the surfaces, texels and tiles of the virtual lightmap, see VirtualLightmap.ts. Needs rayTraceScene.wgsl (Model),
-//sceneBuffer and uniforms.cameraPosition, pixelSize, texelsPerPixel, texelSizeMin and levelAngle
+//sceneBuffer and uniforms.cameraPosition, pixelSize, texelsPerPixel, texelSizeMin, levelAngle and feedTexelSize
 
 //texels along the side of the lightmap, which is square
 override LIGHTMAP_SIZE: u32;
@@ -12,6 +12,10 @@ override TILE_SIZE: u32;
 const TILE_NONE = 0xFFFFFFFFu;
 //the texel size doubles per level, so this is far more than a scene needs. Keeps 1 << level in range
 const LEVEL_MAX = 20u;
+//a bit of the level in the key of the tiles that the rays feed, see getCachedLighting in updateVirtualLightmap.wgsl. So
+//those are other tiles than the ones of the cells, at the same level of the same face: the resolve and the cells never
+//find them. Only showFeedTiles of the resolve looks them up
+const FEED_LEVEL = 0x100u;
 
 //a point on a face of a model. Every primitive has 6 faces and a mesh a face per UV island (chart), which are the charts
 //of the lightmap: the lighting is never interpolated from one face to another
@@ -121,6 +125,12 @@ fn getLevel(p: vec3<f32>, n: vec3<f32>) -> f32 {
 	let angleLevels = min(-log2(max(cosAngle, 1e-6)) * uniforms.levelAngle, LEVEL_ANGLE_MAX);
 	let size = uniforms.pixelSize * d / uniforms.texelsPerPixel;
 	return clamp(log2(size / uniforms.texelSizeMin) + angleLevels, 0., f32(LEVEL_MAX));
+}
+
+//the level of the feed tiles: the one with the texels nearest to feedTexelSize, the same for the whole scene and
+//wherever the camera is. See getCachedLighting in updateVirtualLightmap.wgsl
+fn getFeedLevel() -> u32 {
+	return u32(clamp(round(log2(uniforms.feedTexelSize / uniforms.texelSizeMin)), 0., f32(LEVEL_MAX)));
 }
 
 fn getTexelSize(level: u32) -> f32 {

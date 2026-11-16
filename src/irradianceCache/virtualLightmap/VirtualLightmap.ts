@@ -272,6 +272,17 @@ export default class VirtualLightmap {
     this.scene = scene;
     //the paths end at their first hit, in the lighting the lightmap has there, instead of tracing bounceCount bounces
     pgUpdate.addParamBool('cacheBounces', true, params2);
+    //the feed: tiles the rays fill themselves, for the hit points the tiles of the cells have no lighting for (what is
+    //out of view). A path then ends at its first hit in the feed texel there, or feeds it with 1 more ray: at most 2
+    //rays and a sun ray, and bounceCount is not used. See getIndirectPathSum in updateVirtualLightmap.wgsl.
+    //The paths a feed texel holds: a path ends in a texel with the chance of the part of them it has. Higher is less
+    //noise in the bounce light of what is out of view, but takes longer to fill and follows changes slower. 0: no feed,
+    //a path goes on for up to bounceCount bounces where the cells have no lighting. The resolve too, for showFeedTiles
+    pgUpdate.addParamInt('rayFeedPaths', 128, 0, 1024, { ...pgSharedParams, step:8 });
+    //the size of the feed texels in m, rounded to a level (texelSizeMin times a power of 2). The same everywhere and
+    //wherever the camera is, so the feed of a surface stays as the camera moves. Larger fills faster and takes less of
+    //the lightmap, but the bounce light of what is out of view is blurrier and leaks through thin walls
+    pgUpdate.addParamFloat('feedTexelSize', .25, .02, 2, pgSharedParams);
     //coarser levels that accumulate the samples too. The resolve needs 2 to blend between levels
     pgUpdate.addParamInt('ancestorLevels', 2, 0, 4, params2);
     //the paths of the coarser lighting a new texel starts with, instead of starting from its first noisy sample
@@ -321,6 +332,11 @@ export default class VirtualLightmap {
     pgResolve.addParamBool('showTiles', false, pgResolveParams);
     //the pixels of texels that still take samples, that hold less than accumulationMax, in yellow
     pgResolve.addParamBool('showConverging', false, pgResolveParams);
+    //only the feed (see rayFeedPaths), the rest unlit: the lighting of the feed texel of every pixel, more yellow the
+    //less of rayFeedPaths paths it holds. Shows how much of the scene the rays have filled. What is in view stops
+    //filling when the cells have lighting there: look at what was out of view before. See getFeedColor in
+    //resolveVirtualLightmap.wgsl
+    pgResolve.addParamBool('showFeedTiles', false, pgResolveParams);
     //the lightmap itself instead of the scene, as a square with black borders next to it. It doesn't move with the camera,
     //so it gets no TAA pass, see usesTAAPass in IrradianceCacheDraw
     this.showLightmap = pgResolve.addParamBool('showLightmap', false, pgResolveParams);

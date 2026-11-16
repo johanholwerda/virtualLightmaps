@@ -89,6 +89,10 @@ struct Uniforms {
 	dragLocal : u32,
 	//the most cells that trace in a frame, see select_main
 	traceCellsMax : u32,
+	//the paths a feed texel holds, 0: no feed. See getCachedLighting
+	rayFeedPaths : f32,
+	//the size of the feed texels in m, see getFeedLevel
+	feedTexelSize : f32,
 }
 
 const DRAG_STROKE_COUNT = 4u;
@@ -165,10 +169,11 @@ fn ageTile(tileIndex: u32, scale: f32) {
 
 //the tile is used this frame. Most cells of a tile find it already marked: a store by all of them would queue on the 1 address.
 //A tile that comes back in view after the sun moved holds the lighting of when it left: its texels count for less
-//the longer ago that is, see ageTile. Only by the thread that replaces the old time
+//the longer ago that is, see ageTile. Only by the thread that replaces the old time.
+//frame: this frame for a tile that is in view, the previous one for a tile the rays feed (see getFeedStamp)
 fn markUsed(index: u32, frame: u32) {
 	let last = atomicLoad(&tileTimeBuffer[index]);
-	if(last == frame){
+	if(last >= frame){
 		return;
 	}
 	let stale = getStaleFrames(last);
@@ -201,7 +206,8 @@ But a tile that is out of view for a second is as likely to go as one that is fo
 Not the same as an EVICT_NEAR of 1: that looks at the first slot only and then takes the oldest of all the others,
 which is anywhere in the sequence (4.3 loads)
  */
-fn findOrInsert(surface: u32, level: u32, tile: vec2<u32>) -> u32 {
+//stamp: the frame the tile is marked as used in, see markUsed
+fn findOrInsert(surface: u32, level: u32, tile: vec2<u32>, stamp: u32) -> u32 {
 	let keySlot = getTileKey(surface, level, tile);
 	let key = keySlot.x;
 	let frame = u32(uniforms.frame);
@@ -210,7 +216,7 @@ fn findOrInsert(surface: u32, level: u32, tile: vec2<u32>) -> u32 {
 	for(; i < uniforms.searchCount; i++){
 		let existing = atomicLoad(&tileBuffer[index]);
 		if(existing == key){
-			markUsed(index, frame);
+			markUsed(index, stamp);
 			return index;
 		}
 		if(existing == 0u){
@@ -235,7 +241,7 @@ fn findOrInsert(surface: u32, level: u32, tile: vec2<u32>) -> u32 {
 			}
 			let existing = atomicLoad(&tileBuffer[scanIndex]);
 			if(existing == key){
-				markUsed(scanIndex, frame);
+				markUsed(scanIndex, stamp);
 				return scanIndex;
 			}
 			if(existing != 0u){
@@ -255,7 +261,7 @@ fn findOrInsert(surface: u32, level: u32, tile: vec2<u32>) -> u32 {
 		for(var j = 0u; j < 4u; j++){
 			let cmp = atomicCompareExchangeWeak(&tileBuffer[evictIndex], evictKey, key);
 			if(cmp.exchanged){
-				markUsed(evictIndex, frame);
+				markUsed(evictIndex, stamp);
 				let start = evictIndex * TILE_SIZE * TILE_SIZE * 2u;
 				for(var t = 0u; t < TILE_SIZE * TILE_SIZE * 2u; t++){
 					atomicStore(&lightingBuffer[start + t], 0u);
@@ -264,7 +270,7 @@ fn findOrInsert(surface: u32, level: u32, tile: vec2<u32>) -> u32 {
 			}
 			//another thread inserted the same tile there
 			if(cmp.old_value == key){
-				markUsed(evictIndex, frame);
+				markUsed(evictIndex, stamp);
 				return evictIndex;
 			}
 			//another tile took it: the empty slot below, if there is one
@@ -282,7 +288,7 @@ fn findOrInsert(surface: u32, level: u32, tile: vec2<u32>) -> u32 {
 			atomicAdd(&tileCount, 1u);
 		}
 		if(cmp.exchanged || cmp.old_value == key){
-			markUsed(index, frame);
+			markUsed(index, stamp);
 			return index;
 		}
 		if(cmp.old_value != 0u){
@@ -309,10 +315,10 @@ fn find(surface: u32, level: u32, tile: vec2<u32>) -> u32 {
 	return TILE_NONE;
 }
 
-//a sample is the average of sampleCount paths, so it weighs sampleCount: the count is in paths, and a higher sampleCount
-//resolves a texel in fewer frames. The count is capped at countMax, so the average keeps following changes in the scene
-fn addSample(accumulated: vec4<f32>, lighting: vec3<f32>, countMax: f32) -> vec4<f32> {
-	let weight = f32(uniforms.sampleCount);
+//weight: the paths the sample is the average of. That of a cell is sampleCount paths, so it weighs sampleCount: the count
+//is in paths, and a higher sampleCount resolves a texel in fewer frames. That of a ray is 1 path, see getIndirectPathSum.
+//The count is capped at countMax, so the average keeps following changes in the scene
+fn addSample(accumulated: vec4<f32>, lighting: vec3<f32>, weight: f32, countMax: f32) -> vec4<f32> {
 	return vec4(mix(accumulated.rgb, lighting, weight / (accumulated.a + weight)), min(accumulated.a + weight, countMax));
 }
 
@@ -462,9 +468,9 @@ The update is inside the loop, in the branch of the thread that got the lock: th
 one that leaves the loop with the lock waits there until the others leave it too, which they don't without the lock.
 A new texel starts from prior, the texel of the level above, as at most seedCount paths.
 When the lock is not got the sample is dropped and prior is returned.
-countMax: the paths the texel holds at most, see addSample
+weight: the paths of the sample, countMax: the paths the texel holds at most, see addSample
  */
-fn addTexelSample(index: u32, lighting: vec3<f32>, prior: vec4<f32>, countMax: f32) -> vec4<f32> {
+fn addTexelSample(index: u32, lighting: vec3<f32>, weight: f32, prior: vec4<f32>, countMax: f32) -> vec4<f32> {
 	let rg = &lightingBuffer[index * 2u];
 	let ba = &lightingBuffer[index * 2u + 1u];
 	var result = prior;
@@ -475,7 +481,7 @@ fn addTexelSample(index: u32, lighting: vec3<f32>, prior: vec4<f32>, countMax: f
 			if(texel.a == 0. && prior.a > 0.){
 				texel = vec4(prior.rgb, min(prior.a, uniforms.seedCount));
 			}
-			texel = addSample(texel, lighting, countMax);
+			texel = addSample(texel, lighting, weight, countMax);
 			let packed = packLighting(texel);
 			atomicStore(rg, packed.x);
 			//the count is positive, so this releases the lock
@@ -487,25 +493,60 @@ fn addTexelSample(index: u32, lighting: vec3<f32>, prior: vec4<f32>, countMax: f
 	return result;
 }
 
-//the lighting the lightmap has at a hit point: the texel at the level the camera sees it at, else the coarser ones.
-//The lightmap is a radiance cache for sampleRay of pathTrace.wgsl, like the hash map of updateSpatialHash.wgsl.
-//The model of the hit is hitModelIndex of rayTraceScene.wgsl.
-//A tile that is out of view gets no samples, so after the light changed it holds the light of when it left: the bounce
-//light of what is behind the camera would stay that of an earlier time of the day. Such a tile is no hit, the path goes
-//on from there instead
+//the feed texel of the hit point of the last getCachedLighting that found no lighting in the tiles of the cells.
+//feedOn: there is a feed (rayFeedPaths), the rest is only set then
+var<private> feedOn: bool;
+//what the feed texel holds, alpha 0 when it has no paths or no tile yet
+var<private> feedLighting: vec4<f32>;
+//the lighting changes at the hit point now: the sun moves, or a dragged model is near
+var<private> feedChanging: bool;
+//its face and its tile (TILE_NONE when it has none yet), see getFeedTexel
+var<private> feedSurface: Surface;
+var<private> feedTile: u32;
+
+//the part of the paths that go on from a feed texel that is full, and add their sample to it. So it keeps following
+//the lighting of the texels its paths end in: the first samples of a texel are from when the feed around it was
+//still empty, with less bounce light
+const FEED_REFRESH = 1. / 16.;
+
+//the frame a feed tile is marked as used in, see markUsed: the previous one, so it is not replaced by another tile for
+//evictFrames, like a tile that is in view
+fn getFeedStamp() -> u32 {
+	return max(u32(uniforms.frame), 1u) - 1u;
+}
+
+/*
+the lighting the lightmap has at a hit point: the texel at the level the camera sees it at, else the coarser ones.
+The lightmap is a radiance cache for the paths of getIndirectPathSum, like the hash map of updateSpatialHash.wgsl.
+The model of the hit is hitModelIndex of rayTraceScene.wgsl.
+A tile that is out of view gets no samples of the cells, so after the light changed it holds the light of when it left:
+the bounce light of what is behind the camera would stay that of an earlier time of the day. Such a tile is no hit.
+
+The feed (rayFeedPaths): the cells only fill the tiles of what is in view, so a path that hits something else found
+no lighting and went on for up to bounceCount bounces. The feed is a second set of tiles that the rays fill
+themselves, for the hit points the tiles of the cells have nothing for. See getIndirectPathSum for how.
+-in tiles of their own (FEED_LEVEL): a texel of a tile of the cells that the camera doesn't see (behind an edge, next
+ to one that is seen) would hold the few noisy paths of the rays, and the resolve blends it with its neighbours
+-at 1 level for the whole scene, see getFeedLevel: the level of the cells follows the distance to the camera, so a
+ surface would get other feed tiles whenever the camera moves, each starting empty
+When the tiles of the cells have no lighting this returns none, and sets the feed texel of the hit point: feedOn and
+the vars with it. A feed tile is kept while rays look at it, and a stale one is reset
+ */
 fn getCachedLighting(p: vec3<f32>, n: vec3<f32>) -> vec4<f32> {
+	feedOn = false;
 	if(uniforms.cacheBounces == 0u){
 		return vec4(0.);
 	}
 	let surface = getSurface(hitModelIndex, hitTriangle, p, n);
 	let level = u32(getLevel(p, n));
+	//only read when the light changed or a model was dragged: the times of the tiles of the cells are written by
+	//claim_main, not in this pass
+	let checkTime = uniforms.lightChangeEnd != 0u || uniforms.dragStrokeEnd != 0u;
 	for(var i = 0u; i <= min(uniforms.ancestorLevels, ANCESTOR_LEVELS_MAX); i++){
 		let texel = getTexel(surface, level + i);
 		let tileIndex = find(surface.id, level + i, texel / TILE_SIZE);
 		if(tileIndex != TILE_NONE){
-			//only read when the light changed or a model was dragged: the times of the tiles are written by claim_main,
-			//not in this pass
-			if(uniforms.lightChangeEnd != 0u || uniforms.dragStrokeEnd != 0u){
+			if(checkTime){
 				let used = atomicLoad(&tileTimeBuffer[tileIndex]);
 				if(uniforms.lightChangeEnd != 0u && getStaleFrames(used) > uniforms.changeFrames * STALE_BOUNCE){
 					continue;
@@ -521,7 +562,188 @@ fn getCachedLighting(p: vec3<f32>, n: vec3<f32>) -> vec4<f32> {
 			}
 		}
 	}
+	if(uniforms.rayFeedPaths <= 0.){
+		return vec4(0.);
+	}
+
+	feedOn = true;
+	feedSurface = surface;
+	feedLighting = vec4(0.);
+	feedChanging = uniforms.lightChanging != 0u;
+	if(!feedChanging && uniforms.dragState != 0u){
+		feedChanging = getCapsuleInfluence(p, n, hitModelIndex, uniforms.dragFrom, uniforms.dragTo, uniforms.dragRadius, uniforms.dragModel) > DRAG_BOUNCE_INFLUENCE;
+	}
+	let feedLevel = getFeedLevel();
+	let texel = getTexel(surface, feedLevel);
+	feedTile = find(surface.id, feedLevel | FEED_LEVEL, texel / TILE_SIZE);
+	if(feedTile == TILE_NONE){
+		return vec4(0.);
+	}
+	if(checkTime){
+		let used = atomicLoad(&tileTimeBuffer[feedTile]);
+		var stale = uniforms.lightChangeEnd != 0u && getStaleFrames(used) > uniforms.changeFrames * STALE_BOUNCE;
+		if(!stale && used < uniforms.dragStrokeEnd){
+			stale = getStrokeInfluence(p, n, hitModelIndex, used) > DRAG_BOUNCE_INFLUENCE;
+		}
+		//its texels keep their lighting as a start, as 1 path. Only by the thread that replaces the old time
+		if(stale && atomicExchange(&tileTimeBuffer[feedTile], getFeedStamp()) == used){
+			ageTile(feedTile, 0.);
+		}
+	}
+	//the tile stays while rays look at it
+	markUsed(feedTile, getFeedStamp());
+	feedLighting = loadLighting(getTexelIndex(feedTile, texel));
 	return vec4(0.);
+}
+
+//the feed texel of the hit point of the last getCachedLighting, which set feedOn, to add a sample to. Its tile is added
+//when it is not in the lightmap yet. TILE_NONE when the lightmap is full there
+fn getFeedTexel() -> u32 {
+	let feedLevel = getFeedLevel();
+	let texel = getTexel(feedSurface, feedLevel);
+	var tileIndex = feedTile;
+	if(tileIndex == TILE_NONE){
+		tileIndex = findOrInsert(feedSurface.id, feedLevel | FEED_LEVEL, texel / TILE_SIZE, getFeedStamp());
+	}
+	return select(getTexelIndex(tileIndex, texel), TILE_NONE, tileIndex == TILE_NONE);
+}
+
+/*
+the sum of the paths first, first + stride, first + 2 * stride.. of the sampleCount paths of getIndirectLighting: the paths
+of getIndirectPath of pathTrace.wgsl, but as 1 loop over the rays of all of them instead of a loop over the bounces in a
+loop over the paths.
+The threads of a wave wait at the end of a loop on the ones that are still in it. Most paths end at their first hit, in
+the cache, so in the loop over the bounces all of them waited on the few that go on. Here a thread whose path ended
+starts on its next path in the same step, while the others bounce.
+The sun ray of a hit is a step of the loop too, a traceRay to the sky instead of isOccluded: that takes more steps
+through the BVH as it doesn't stop at the first hit, but nothing waits on it.
+This is the only traceRay call site, like sampleRay: use the one or the other in a shader.
+
+A path ends at the first hit that the tiles of the cells have lighting for (getCachedLighting). Where they have none:
+-without the feed (rayFeedPaths 0) it goes on like sampleRay, for up to bounceCount bounces
+-with the feed it is at most 2 rays and a sun ray, whatever bounceCount:
+ 1 the first hit ends in its feed texel, with the chance of the part of rayFeedPaths paths that texel holds. Else the
+   path feeds it: it goes on for 1 more ray (the sun sample with directionalProbability, else a bounce), and the light
+   that brings to the hit, without its albedo, is added to the texel as a sample of 1 path. Like the paths of a cell are
+   for the texel of the cell. A full texel still feeds FEED_REFRESH of its paths, and all of them while the light
+   changes there. The tile of the texel is added here
+ 2 the second hit ends in its feed texel when that holds anything, however few paths: the noise averages out in the
+   texel of the first hit. Else in its sun light only, the sun ray times directionalProbability, without a bounce.
+   No tile is added here: the feed is what the surfaces in view see, not the whole scene
+ So the light of a surface that neither the camera nor a surface in view sees is its sun light only, the rest has all
+ its bounces: a feed texel is fed by paths that end in the other texels, over the frames
+ */
+fn getIndirectPathSum(p: vec3<f32>, n: vec3<f32>, seed: vec2<u32>, first: u32, stride: u32, sampleCount: u32) -> vec3<f32>{
+	var sum = vec3(0.);
+	if(first >= sampleCount || uniforms.bounceCount <= 0){
+		return sum;
+	}
+	let sunColor = uniforms.directionalColor * uniforms.directionalBrightness;
+	var i = first;
+	var ro = p + n * MIN_DIST;
+	var rd = getIndirectDirection(n, seed, i, sampleCount);
+	var col = vec3(1.);
+	var bounce = 0;
+	//the ray is the sun ray of the last hit of the path
+	var sunRay = false;
+	//the texel the path feeds, and what the path lets through from that hit on: col without what is before it
+	var feedTexel = TILE_NONE;
+	var feedCol = vec3(1.);
+
+	loop {
+		let hit = traceRay(ro + rd * MIN_DIST, rd);
+		let hitPoint = ro + rd * hit.distance;
+		let sky = isSky(hitPoint);
+		var ended = true;
+		//the light the path ends in
+		var light = vec3(0.);
+		if(sunRay){
+			//col has the cosine at the hit
+			if(sky){
+				light = sunColor;
+			}
+		}else if(sky){
+			light = hit.color;
+		}else{
+			let hitNormal = hit.normal;
+			col *= hit.color;
+			feedCol *= hit.color;
+			let cached = getCachedLighting(hitPoint, hitNormal);
+			if(cached.a > 0.){
+				light = cached.rgb;
+			}else{
+				let r = hash44ff(vec4(hitPoint, f32(i)));
+				//the path goes on with a sun ray that counts for this much, or with a bounce
+				var sunWeight = 0.;
+				var bounces = false;
+				if(!feedOn){
+					if(r.z < uniforms.directionalProbability){
+						sunWeight = 1.;
+					}else{
+						bounce++;
+						bounces = bounce < uniforms.bounceCount;
+					}
+				}else if(bounce == 0){
+					var endChance = 0.;
+					if(!feedChanging){
+						endChance = min(feedLighting.a / uniforms.rayFeedPaths, 1. - FEED_REFRESH);
+					}
+					if(r.w < endChance){
+						light = feedLighting.rgb;
+					}else{
+						feedTexel = getFeedTexel();
+						feedCol = vec3(1.);
+						if(r.z < uniforms.directionalProbability){
+							sunWeight = 1.;
+						}else{
+							bounce = 1;
+							bounces = true;
+						}
+					}
+				}else if(feedLighting.a > 0.){
+					light = feedLighting.rgb;
+				}else{
+					sunWeight = uniforms.directionalProbability;
+				}
+
+				if(sunWeight > 0.){
+					let l = sampleSunDirection(r.xy);
+					let cosine = dot(hitNormal, l);
+					//a hit that faces away from the sun gets no sun ray
+					if(cosine > 0.){
+						col *= cosine * sunWeight;
+						feedCol *= cosine * sunWeight;
+						ro = hitPoint + hitNormal * MIN_DIST;
+						rd = l;
+						sunRay = true;
+						ended = false;
+					}
+				}else if(bounces){
+					ro = hitPoint;
+					rd = cosWeightedRandomHemisphereDirection(hitNormal, r.xy);
+					ended = false;
+				}
+			}
+		}
+
+		if(ended){
+			sum += col * light;
+			if(feedTexel != TILE_NONE){
+				addTexelSample(feedTexel, feedCol * light, 1., vec4(0.), uniforms.rayFeedPaths);
+				feedTexel = TILE_NONE;
+			}
+			i += stride;
+			if(i >= sampleCount){
+				break;
+			}
+			ro = p + n * MIN_DIST;
+			rd = getIndirectDirection(n, seed, i, sampleCount);
+			col = vec3(1.);
+			bounce = 0;
+			sunRay = false;
+		}
+	}
+	return sum;
 }
 
 
@@ -571,7 +793,7 @@ fn getCellTexels(point: CellPoint, insert: bool) -> array<u32, ANCESTOR_LEVELS_M
 		let texel = getTexel(surface, level + i);
 		var tileIndex: u32;
 		if(insert){
-			tileIndex = findOrInsert(surface.id, level + i, texel / TILE_SIZE);
+			tileIndex = findOrInsert(surface.id, level + i, texel / TILE_SIZE, u32(uniforms.frame));
 		}else{
 			tileIndex = find(surface.id, level + i, texel / TILE_SIZE);
 		}
@@ -859,7 +1081,7 @@ fn trace_main(
 		}
 		//a coarser texel gets 4 times the samples per level
 		let levelCountMax = select(countMax, min(countMax * f32(1u << (2u * u32(i))), CHANGING_COUNT_MAX), changing);
-		prior = addTexelSample(index, lighting, prior, levelCountMax);
+		prior = addTexelSample(index, lighting, f32(uniforms.sampleCount), prior, levelCountMax);
 	}
 }
 
