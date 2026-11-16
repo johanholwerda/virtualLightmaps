@@ -21,6 +21,11 @@ const GOLDEN_SKY = new Vector3(1, .65, .5);
 //how much more air the sunlight goes through per channel, see getSunTint
 const EXTINCTION = new Vector3(.04, .12, .3);
 
+const DEG = 180 / Math.PI;
+//seconds the light still counts as changing after the sun or the sky was changed by hand. A slider gives no events while
+//it is held still, this keeps a slow drag one change
+const MANUAL_CHANGE_HOLD = .25;
+
 const smoothstep = (edge0:number, edge1:number, x:number) => {
   const t = Math.min(Math.max((x - edge0) / (edge1 - edge0), 0), 1);
   return t * t * (3 - 2 * t);
@@ -32,8 +37,9 @@ const getAirMass = (elevation:number) => 1 / (Math.max(elevation, 0) + .05);
 /*
 Moves the sun from the morning through the afternoon to the evening, then quickly under the ground back to the morning.
 Low suns are dimmer and redder, the sky goes from a golden color at the horizon to its full blue at noon, and is dark at
-night. Off, it is noon: the sun and the sky the scene has without the cycle, so the test images stay comparable.
-The caches follow the light with their own delay, groundTruth restarts every frame
+night. Off, the sun stays where it is and the sunAngleX (elevation) and sunAngleY (azimuth) sliders move it. They start at
+noon: the sun and the sky the scene has without the cycle, so the test images stay comparable. On, the cycle moves the
+sliders along. The caches follow the light with their own delay, groundTruth restarts every frame
  */
 export default class DayCycle {
   private scene: Scene;
@@ -42,6 +48,14 @@ export default class DayCycle {
   private directionalColor: ParamColor;
   public enabled!: ParamBool;
   private duration!: ParamFloat;
+  //degrees above the horizon
+  private sunAngleX!: ParamFloat;
+  //degrees around the up axis, 0 is +x, 90 is +z
+  private sunAngleY!: ParamFloat;
+  //the cycle sets the sliders: their callback doesn't apply them again
+  private settingAngles = false;
+  //performance.now() in seconds of the last change of the sun or the sky by hand, see sunChanging
+  private lastManualChange = -Infinity;
   //the sky color at noon
   private daySky: Vector3;
   //seconds into the loop, 0 is the morning
@@ -59,20 +73,34 @@ export default class DayCycle {
   }
 
   public init(paramGroup:ParamGroup) {
-    //off by default: the noon sun the scene starts with
-    this.enabled = paramGroup.addParamBool('dayCycle', false, { callback: () => {
-      this.lastFrameTime = null;
-      if(!this.enabled.value) this.apply(Math.PI / 2);
-    } });
+    //off by default: the noon sun the scene starts with. Turned off the sun stays where the cycle left it
+    this.enabled = paramGroup.addParamBool('dayCycle', false, { callback: () => this.lastFrameTime = null });
     //seconds for a whole day and night
     this.duration = paramGroup.addParamFloat('dayCycleDuration', 60, 10, 300);
+    //the sun by hand, while the cycle is off. Under the horizon is the night of the cycle
+    const callback = () => {
+      if(!this.settingAngles) this.applyManual();
+    };
+    this.sunAngleX = paramGroup.addParamFloat('sunAngleX', Math.asin(NOON.y) * DEG, -90, 90, { callback });
+    this.sunAngleY = paramGroup.addParamFloat('sunAngleY', Math.atan2(NOON.z, NOON.x) * DEG, -180, 180, { callback });
   }
 
   //the sky color at noon, from the skyColor and skyBrightness params. With the cycle off it shows right away,
   //with the cycle on the next update blends it in
   public setDaySky(color:Vector3) {
     this.daySky.copy(color);
-    if(!this.enabled.value) this.apply(Math.PI / 2);
+    if(!this.enabled.value) this.applyManual();
+  }
+
+  //the sun or the sky moves: the cycle runs, or they were changed by hand a moment ago. The caches keep taking samples
+  //then and take them again when it stops, see Scene.sunChanging
+  public get sunChanging(): boolean {
+    return this.enabled.value || performance.now() / 1000 - this.lastManualChange < MANUAL_CHANGE_HOLD;
+  }
+
+  private applyManual() {
+    this.lastManualChange = performance.now() / 1000;
+    this.apply(this.getSliderDirection());
   }
 
   public update() {
@@ -84,7 +112,9 @@ export default class DayCycle {
 
     const duration = this.duration.value;
     this.time %= duration;
-    this.apply(this.getSunAngle(this.time / duration));
+    const direction = this.getCircleDirection(this.getSunAngle(this.time / duration));
+    this.setSliders(direction);
+    this.apply(direction);
     //groundTruth converges for a fixed light only, see GroundTruth.update
     ParamBase.changeCount++;
   }
@@ -102,11 +132,33 @@ export default class DayCycle {
     return (2 * s3 - 3 * s2 + 1) * p0 + (s3 - 2 * s2 + s) * tangent + (-2 * s3 + 3 * s2) * p1 + (s3 - s2) * tangent;
   }
 
-  private apply(angle:number) {
+  //the sun on its circle at angle, see getSunAngle
+  private getCircleDirection(angle:number): Vector3 {
     const direction = this.sunDirection.copy(SUNRISE).multiplyScalar(Math.cos(angle));
     direction.x += NOON.x * Math.sin(angle);
     direction.y += NOON.y * Math.sin(angle);
     direction.z += NOON.z * Math.sin(angle);
+    return direction;
+  }
+
+  private getSliderDirection(): Vector3 {
+    const elevation = this.sunAngleX.value / DEG, azimuth = this.sunAngleY.value / DEG;
+    return this.sunDirection.setValues(
+      Math.cos(elevation) * Math.cos(azimuth),
+      Math.sin(elevation),
+      Math.cos(elevation) * Math.sin(azimuth)
+    );
+  }
+
+  //moves the sliders along with the cycle, so turned off the sun stays there
+  private setSliders(direction:Vector3) {
+    this.settingAngles = true;
+    this.sunAngleX.setValue(Math.asin(Math.min(Math.max(direction.y, -1), 1)) * DEG);
+    this.sunAngleY.setValue(Math.atan2(direction.z, direction.x) * DEG);
+    this.settingAngles = false;
+  }
+
+  private apply(direction:Vector3) {
     const elevation = direction.y;
 
     const sky = this.skyColor.copy(NIGHT_SKY)

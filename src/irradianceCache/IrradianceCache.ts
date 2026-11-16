@@ -6,7 +6,7 @@ import IrradianceCacheDraw from "./IrradianceCacheDraw";
 export default class IrradianceCache {
   private renderer!: Renderer;
   private irradianceCacheDraw!: IrradianceCacheDraw;
-  public static description: string = "different ways of storing static lighting";
+  public static description: string = "virtual lightmaps. Use WASD and mousse for camera control. Click scene objects to drag";
 
   async start(canvasParent: HTMLElement, preloader: WebGPUPreLoader, uiVisible:boolean = true): Promise<void> {
     LogGL.ENABLED = uiVisible;

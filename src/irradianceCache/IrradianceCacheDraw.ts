@@ -232,7 +232,7 @@ export default class IrradianceCacheDraw {
     this.sceneEditor.update();
     this.camera.mouseRotationEnabled = !this.sceneEditor.dragging;
     //the caches keep taking samples while the sun or a model moves
-    this.scene.sunChanging = this.dayCycle.enabled.value;
+    this.scene.sunChanging = this.dayCycle.sunChanging;
     this.scene.lightChanging = this.scene.sunChanging || this.sceneEditor.dragging;
 
     const drawMode = this.drawMode.value as DrawMode;

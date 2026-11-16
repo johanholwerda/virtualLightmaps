@@ -2,13 +2,15 @@
 
 **[Live demo](https://johanholwerda.github.io/virtualLightmaps/)** (needs a browser with WebGPU)
 
-Irradiance cache by storing a virtual lightmap that is accessed by a hash map. The quality seems to be higher than that of other irradiance cache methods. This is useful when pre-baked lightmaps would take too much memory or when the scene geometry or lighting is dynamic. It has a LOD / mipmap structure so surfaces close by have more resolution than surfaces far away.
+Irradiance cache by storing a virtual lightmap that is accessed by a hash map. The quality seems to be higher than that of other irradiance cache methods. This is useful when pre-baked lightmaps would take too much memory or when the lightmap needs to be updated because of a change in scene geometry or lighting. It has a LOD / mipmap structure so surfaces close by have more resolution than surfaces far away. The lightmap size and resolution in this example are set in a way that the lightmap can not hold the whole scene so moving the camera around will continuously create and evict lightmap tiles. A larger scene would not bring the lighting quality down.
 
 ![Colonnade with colored walls bleeding light](docs/images/colonnade.webp)
 
 ![Courtyard with sunlight and colored boxes](docs/images/courtyard.webp)
 
 ![Helmet model on the floor in sun and shadow](docs/images/helmet.webp)
+
+![Lightmap tiles](docs/images/tiles.webp)
 
 How it works:
 
@@ -23,7 +25,7 @@ How it works:
 - The resolve looks up the texels of every pixel in the 2 levels around its level, interpolates the 4 nearest texels (never across faces) and blends the levels, or picks 1 by noise when TAA follows. A texel with few paths leans on the smoother coarser level.
 - A tile that is out of view keeps its lighting until its slot is needed. While the sun moves the texels hold a short history (`changeFrames`), and a dragged model only resets the texels it has influence on (around it and in its shadow).
 
-Object can be moved after clicking them, and the lightmap will update. The lightmap is also updated when the sun moves. Quality is lower while the scene or sun is moving. The lightmap might need a reset to remove artifacts. This part of the code can be improved.
+Object can be moved after clicking them, and the lightmap will update. The lightmap is also updated when the sun moves. Quality is lower while anything is moving. The lightmap might need a reset to remove artifacts. This part of the code can be improved.
 The sampling of the scene is done with raytracing and this is most of the cost. Other irradiance caching techniques have been added to compare cost / quality.
 ## Running
 
