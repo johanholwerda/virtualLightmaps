@@ -25,6 +25,8 @@ of their first hit, and the result is accumulated in the hash cell of the pixel 
 -a cell is a world space cube, its size the power of 2 that covers about cellSize pixels at its distance
 -the normal is part of the key, so the faces at a hard edge or the 2 sides of a wall never share lighting
 -no bounds, and nothing to split or collapse: cells that no pixel used for evictFrames are taken over by new ones
+-the feed: cells the rays fill themselves where they hit what is out of view, like the feed of VirtualLightmap, so the
+ paths are at most 2 rays and a sun ray instead of bounceCount bounces. See getIndirectPathSum in updateSpatialHash.wgsl
 The resolve interpolates the 4 nearest cells of 2 levels, see resolveSpatialHash.wgsl
  */
 export default class SpatialHash {
@@ -109,8 +111,22 @@ export default class SpatialHash {
     pgUpdate.addParamInt('ancestorLevels', 2, 0, 4, pgUpdateParams);
     //the samples of the coarser lighting a new cell starts with, instead of starting from its first noisy sample
     pgUpdate.addParamFloat('seedCount', 4, 0, 64, pgUpdateParams);
-    //the frames after which a cell no pixel uses can be taken by another one
+    //the frames after which a cell no pixel (or for a feed cell: no ray) uses can be taken by another one
     pgUpdate.addParamFloat('evictFrames', 120, 1, 1000, pgUpdateParams);
+    //the feed: cells the rays fill themselves, for the hit points the cells of the screen have no lighting for (what is
+    //out of view). A path then ends at its first hit in the feed cell there, or feeds it with 1 more ray: at most 2
+    //rays and a sun ray, and bounceCount is not used. See getIndirectPathSum in updateSpatialHash.wgsl.
+    //The paths a feed cell holds: a path ends in a cell with the chance of the part of them it has. Higher is less
+    //noise in the bounce light of what is out of view, but takes longer to fill and follows changes slower. 0: no feed,
+    //a path goes on for up to bounceCount bounces where the cells have no lighting. The resolve too, for showFeedCells
+    pgUpdate.addParamInt('rayFeedPaths', 128, 0, 1024, { ...pgParams, step:8 });
+    //the size of the feed cells in m, rounded to a level (sizeMin times a power of 2). The same everywhere and wherever
+    //the camera is, so the feed of a surface stays as the camera moves. Larger fills faster and takes fewer slots, but
+    //the bounce light of what is out of view is blurrier and leaks between parallel surfaces closer than a cell
+    pgUpdate.addParamFloat('feedCellSize', .25, .02, 2, pgParams);
+    //the part of the workgroups whose paths feed a feed cell that is full too, instead of ending in it: a full cell
+    //keeps following the light around it as it fills, and as the sun moves. See feedRefreshing in updateSpatialHash.wgsl
+    pgUpdate.addParamFloat('feedRefresh', 1 / 16, 0, 1, pgUpdateParams);
 
     const pgResolveParams = { materials: [this.resolveMaterial] };
     const pgResolve = pg.addGroup('spatialHashResolve');
@@ -121,6 +137,11 @@ export default class SpatialHash {
     //the pixels no cell covers in red
     pgResolve.addParamBool('showHoles', false, pgResolveParams);
     pgResolve.addParamBool('showLevels', false, pgResolveParams);
+    //only the feed (see rayFeedPaths), the rest unlit: the lighting of the feed cell of every pixel, more yellow the
+    //less of rayFeedPaths paths it holds. Shows how much of the scene the rays have filled. What is in view stops
+    //filling when the screen cells have lighting there: look at what was out of view before. See getFeedColor in
+    //resolveSpatialHash.wgsl
+    pgResolve.addParamBool('showFeedCells', false, pgResolveParams);
 
     scene.bindPathTrace(this.updateShader);
   }

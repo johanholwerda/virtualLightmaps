@@ -1,5 +1,5 @@
 //the hashing of the spatial hash map. A cell is a world space cube at a level of detail,
-//for one normal direction. Needs uniforms.sizeMin, uniforms.cellSize and uniforms.pixelSize
+//for one normal direction. Needs uniforms.sizeMin, uniforms.cellSize, uniforms.pixelSize and uniforms.feedCellSize
 override HASHMAP_SIZE: u32;
 
 //no entry: not found, or the probe sequence is full
@@ -58,6 +58,29 @@ fn getDirection(n: vec3<f32>) -> vec3<f32> {
 fn getCellPosition(p: vec3<f32>, direction: vec3<f32>, level: u32) -> vec3<f32> {
 	let cellSize = getCellSize(level);
 	return (p + direction * (cellSize * .1)) / cellSize;
+}
+
+//the checksum and the first slot of the cell at p, see getKey
+fn getCellKey(p: vec3<f32>, direction: vec3<f32>, level: u32) -> vec2<u32> {
+	return getKey(vec3<i32>(floor(getCellPosition(p, direction, level))), direction, level);
+}
+
+//the level bit of the feed cells in their key: cells of their own, apart from the cells of the screen at the same level.
+//See getCachedLighting in updateSpatialHash.wgsl
+const FEED_LEVEL = 0x10000u;
+//the highest level of the feed cells, so the shift of getCellSize stays in range
+const FEED_LEVEL_MAX = 24.;
+
+//the level of the feed cells: the one with the cells nearest to feedCellSize, the same for the whole scene and wherever
+//the camera is
+fn getFeedLevel() -> u32 {
+	return u32(clamp(round(log2(uniforms.feedCellSize / uniforms.sizeMin)), 0., FEED_LEVEL_MAX));
+}
+
+//the checksum and the first slot of the feed cell at p
+fn getFeedKey(p: vec3<f32>, direction: vec3<f32>) -> vec2<u32> {
+	let level = getFeedLevel();
+	return getKey(vec3<i32>(floor(getCellPosition(p, direction, level))), direction, level | FEED_LEVEL);
 }
 
 //the checksum and the first slot of the cell. The direction is part of the key, so the 2 sides of a wall,

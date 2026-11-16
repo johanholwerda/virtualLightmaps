@@ -19,6 +19,11 @@ struct Uniforms {
 	directionBlend : f32,
 	showHoles : f32,
 	showLevels : f32,
+	//only the feed cells instead of the lighting, see getFeedColor
+	showFeedCells : f32,
+	//of the update, for showFeedCells: the paths a feed cell holds and its size, see getFeedLevel
+	rayFeedPaths : f32,
+	feedCellSize : f32,
 }
 
 struct VertexInput {
@@ -152,6 +157,33 @@ fn getLighting(p: vec3<f32>, n: vec3<f32>, d: f32) -> vec4<f32> {
 	return vec4(mix(lighting0.xyz, lighting1.xyz, w), max(lighting0.w, lighting1.w));
 }
 
+//the unlit albedo of showFeedCells
+const FEED_UNLIT = .04;
+
+/*
+showFeedCells: the lighting of the feed cell of the pixel, the one a ray that hits here ends in or feeds when the
+cells of the screen have no lighting (see getCachedLighting in updateSpatialHash.wgsl). The cell as it is, not
+interpolated, so its size shows.
+-no feed cell, or one without paths: the albedo unlit, dark
+-a cell that is still filling (less than rayFeedPaths paths): its lighting, more yellow the fewer paths it holds
+-a full one: its lighting, as the rays read it
+What is in view only has the paths of the frames before the screen cells had lighting there: after that the rays end
+in those. Look at what was out of view before
+ */
+fn getFeedColor(p: vec3<f32>, n: vec3<f32>, albedo: vec3<f32>) -> vec3<f32> {
+	let unlit = albedo * FEED_UNLIT;
+	let direction = getDirection(n);
+	let level = getFeedLevel();
+	let lighting = getCell(vec3<i32>(floor(getCellPosition(p, direction, level))), direction, level | FEED_LEVEL);
+	if(lighting.a == 0.){
+		return unlit;
+	}
+	let c = toneMap(albedo * lighting.rgb * uniforms.exposure);
+	//less yellow the more paths it holds
+	let missing = 1. - min(lighting.a / max(uniforms.rayFeedPaths, 1.), 1.);
+	return mix(c, vec3(1., 1., 0.), .5 * missing);
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	let coord = vec2<u32>(input.uv * uniforms.resolution);
@@ -165,6 +197,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 	let normalDepth = loadNormalDepth(normalDepthTexture, coord);
 	let uv = (vec2<f32>(coord) + .5) / uniforms.resolution;
 	let worldPosition = depthToPosition(normalDepth.w, uv * 2. - 1.);
+	if(uniforms.showFeedCells > .5){
+		return vec4(getFeedColor(worldPosition, normalDepth.xyz, albedo.xyz), 1.);
+	}
 
 	let lighting = getLighting(worldPosition, normalDepth.xyz, normalDepth.w);
 	//no cell yet, only the case for a few frames after a reset or a disocclusion: the albedo with a dim light, like octreeResolve.wgsl
