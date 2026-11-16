@@ -1,0 +1,19 @@
+{
+  "name": "virtual-lightmap",
+  "version": "1.0.0",
+  "description": "Virtual lightmap irradiance cache, isolated from the MediaMonks WebGPU framework",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.67",
+    "typescript": "^5.3.3",
+    "vite": "^6.0.7",
+    "vite-plugin-mkcert": "^1.17.6"
+  }
+}

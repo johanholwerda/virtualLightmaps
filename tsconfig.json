@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "target": "esnext",
+    "strict": true,
+    "skipLibCheck": true,
+    "preserveConstEnums": true,
+    "allowSyntheticDefaultImports": true,
+    "isolatedModules": true,
+    "experimentalDecorators": true,
+    "moduleResolution": "bundler",
+    "baseUrl": "./src/",
+    "paths": {
+      "monks-webgpu/*": [
+        "lib/*"
+      ]
+    },
+    "lib": ["DOM", "DOM.Iterable", "ESNext"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "node_modules/@webgpu/types/dist/index.d.ts"
+  ]
+}

@@ -1,0 +1,26 @@
+# IDE configuration
+.idea
+.vs
+
+# Cache and temp folders
+.webpackcache
+.eslintcache
+.stylelintcache
+.tmp
+.awcache
+
+# osx metadata
+.DS_Store
+
+# error logs
+npm-debug.log
+npm-debug.log.*
+yarn-error.log
+
+# external modules
+node_modules
+
+# build output
+build/*
+single-build/*
+dist/*
