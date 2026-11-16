@@ -93,6 +93,8 @@ struct Uniforms {
 	rayFeedPaths : f32,
 	//the size of the feed texels in m, see getFeedLevel
 	feedTexelSize : f32,
+	//the part of the workgroups of trace_main whose paths feed full feed texels too, see feedRefreshing
+	feedRefresh : f32,
 }
 
 const DRAG_STROKE_COUNT = 4u;
@@ -504,10 +506,15 @@ var<private> feedChanging: bool;
 var<private> feedSurface: Surface;
 var<private> feedTile: u32;
 
-//the part of the paths that go on from a feed texel that is full, and add their sample to it. So it keeps following
-//the lighting of the texels its paths end in: the first samples of a texel are from when the feed around it was
-//still empty, with less bounce light
-const FEED_REFRESH = 1. / 16.;
+/*
+the paths of this workgroup all feed the texel of their first hit, also when it is full: set by trace_main for
+feedRefresh of the workgroups, others every frame. So a full texel keeps following the lighting of the texels its
+paths end in: its first samples are from when the feed around it was still empty, with less bounce light.
+Per workgroup and not per path: a path that feeds takes 1 or 2 rays more, and the threads of a workgroup wait on the
+one that takes the most. A few of those paths in every workgroup made all of them take those steps, nearly empty. Now
+they are together, in workgroups where every thread has them
+ */
+var<private> feedRefreshing: bool;
 
 //the frame a feed tile is marked as used in, see markUsed: the previous one, so it is not replaced by another tile for
 //evictFrames, like a tile that is in view
@@ -625,8 +632,8 @@ A path ends at the first hit that the tiles of the cells have lighting for (getC
  1 the first hit ends in its feed texel, with the chance of the part of rayFeedPaths paths that texel holds. Else the
    path feeds it: it goes on for 1 more ray (the sun sample with directionalProbability, else a bounce), and the light
    that brings to the hit, without its albedo, is added to the texel as a sample of 1 path. Like the paths of a cell are
-   for the texel of the cell. A full texel still feeds FEED_REFRESH of its paths, and all of them while the light
-   changes there. The tile of the texel is added here
+   for the texel of the cell. A full texel is still fed by the workgroups that refresh (feedRefreshing), and by all
+   paths while the light changes there. The tile of the texel is added here
  2 the second hit ends in its feed texel when that holds anything, however few paths: the noise averages out in the
    texel of the first hit. Else in its sun light only, the sun ray times directionalProbability, without a bounce.
    No tile is added here: the feed is what the surfaces in view see, not the whole scene
@@ -685,8 +692,8 @@ fn getIndirectPathSum(p: vec3<f32>, n: vec3<f32>, seed: vec2<u32>, first: u32, s
 					}
 				}else if(bounce == 0){
 					var endChance = 0.;
-					if(!feedChanging){
-						endChance = min(feedLighting.a / uniforms.rayFeedPaths, 1. - FEED_REFRESH);
+					if(!feedChanging && !feedRefreshing){
+						endChance = feedLighting.a / uniforms.rayFeedPaths;
 					}
 					if(r.w < endChance){
 						light = feedLighting.rgb;
@@ -1047,6 +1054,8 @@ fn trace_main(
 		let texelIndex = traceCells[getCellTexelSlot(cellID)];
 		let seed = getTexelSeed(texelIndex);
 		sampleNumber = getTexelSampleNumber(texelIndex, cellCountMax.count);
+		let group = GlobalInvocationID.x / TRACE_GROUP_SIZE;
+		feedRefreshing = f32(tileHash(group ^ tileHash(u32(uniforms.frame))) >> 8u) / 16777216. < uniforms.feedRefresh;
 		sum = getIndirectPathSum(point.worldPosition, point.n, seed, lane, lanes, uniforms.sampleCount);
 		sun = getSeededDirectSample(point.worldPosition, point.n, seed, lane, lanes);
 	}

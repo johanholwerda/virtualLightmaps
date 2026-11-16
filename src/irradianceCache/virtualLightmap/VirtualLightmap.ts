@@ -33,9 +33,9 @@ type QualitySetting = {lightmapSize: number, texelsPerPixel: number, sampleCount
 const QUALITY_NAMES = ['low', 'medium', 'high', 'max'];
 const QUALITY_SETTINGS: QualitySetting[] = [
   //halving traceSamplesMax makes it be clamped to the max almost all the time. Lowering smooths out the frame duration spikes
-  {lightmapSize: 1536, texelsPerPixel: Math.sqrt(1/64), sampleCount: 8, referenceCellSize: Math.sqrt(32 ), traceSamplesMax: 512, accumulationMax: 2048},
-  {lightmapSize: 2048, texelsPerPixel: Math.sqrt(1/32), sampleCount: 16, referenceCellSize: Math.sqrt(16), traceSamplesMax: 1024, accumulationMax: 2048},
-  {lightmapSize: 3072, texelsPerPixel: Math.sqrt(1/16), sampleCount: 24, referenceCellSize: Math.sqrt(8), traceSamplesMax: 2048, accumulationMax: 2048},
+  {lightmapSize: 2048, texelsPerPixel: Math.sqrt(1/64), sampleCount: 8, referenceCellSize: Math.sqrt(32 ), traceSamplesMax: 512, accumulationMax: 1024},
+  {lightmapSize: 3072, texelsPerPixel: Math.sqrt(1/32), sampleCount: 16, referenceCellSize: Math.sqrt(16), traceSamplesMax: 1024, accumulationMax: 1024},
+  {lightmapSize: 4096, texelsPerPixel: Math.sqrt(1/16), sampleCount: 24, referenceCellSize: Math.sqrt(8), traceSamplesMax: 2048, accumulationMax: 2048},
   {lightmapSize: 4096, texelsPerPixel: Math.sqrt(1/8), sampleCount: 32, referenceCellSize: Math.sqrt(4), traceSamplesMax: 8192, accumulationMax: 2048},
 ];
 const QUALITY_DEFAULT = QUALITY_NAMES.indexOf('high');
@@ -283,6 +283,11 @@ export default class VirtualLightmap {
     //wherever the camera is, so the feed of a surface stays as the camera moves. Larger fills faster and takes less of
     //the lightmap, but the bounce light of what is out of view is blurrier and leaks through thin walls
     pgUpdate.addParamFloat('feedTexelSize', .25, .02, 2, pgSharedParams);
+    //the part of the workgroups of the trace pass whose paths feed a feed texel that is full too, instead of ending in
+    //it. Not for what moves: a feed texel gets its first rayFeedPaths paths while the feed around it is still empty,
+    //so with less bounce light than there is, and without this it stays that dark. 0: a full texel is final until the
+    //sun or a model moves, and no path is longer than it has to be. See feedRefreshing in updateVirtualLightmap.wgsl
+    pgUpdate.addParamFloat('feedRefresh', 1 / 16, 0, 1, params2);
     //coarser levels that accumulate the samples too. The resolve needs 2 to blend between levels
     pgUpdate.addParamInt('ancestorLevels', 2, 0, 4, params2);
     //the paths of the coarser lighting a new texel starts with, instead of starting from its first noisy sample
