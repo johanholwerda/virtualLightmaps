@@ -1,4 +1,4 @@
-# virtualLightmap
+# virtual dynamic lightmap
 
 **[Live demo](https://johanholwerda.github.io/virtualLightmaps/)** (needs a browser with WebGPU). Quality is set to high by default. Set to medium or low for better performance.
 
