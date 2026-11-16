@@ -1,6 +1,8 @@
 override WORK_GROUP_SIZE_X: u32;
 override WORK_GROUP_SIZE_Y: u32;
 override CELL_SIZE: u32;
+//the slots of the feed hash map, see getFeedKey
+override FEED_HASHMAP_SIZE: u32;
 
 struct Uniforms {
 	resolution : vec2<f32>,
@@ -32,6 +34,14 @@ struct Uniforms {
 	ancestorWeight : f32,
 	//the samples of the ancestor lighting a new leaf starts with
 	seedCount : f32,
+	//the paths a feed cell holds, 0: no feed. See getCachedLighting
+	rayFeedPaths : f32,
+	//the size of the feed cells in m, see getFeedKey
+	feedCellSize : f32,
+	//the part of the workgroups whose paths feed full feed cells too, see feedRefreshing
+	feedRefresh : f32,
+	//the frames after which a feed cell no ray looked at can be taken by another one
+	feedEvictFrames : f32,
 }
 
 const ANCESTOR_LEVELS_MAX = 4u;
@@ -47,6 +57,8 @@ struct NodePath {
 @group(0) @binding(3) var<storage, read_write> octreeBuffer : array<OctreeNode>;
 @group(0) @binding(4) var<storage, read_write> lastWrittenIndex : atomic<u32>;
 @group(0) @binding(5) var normalDepthTexture: texture_2d<u32>;
+//after the nodes: the feed hash map, FEED_WORDS per slot, see getFeedWord. In this buffer as the shader is at the limit
+//of 10 storage buffers
 @group(0) @binding(6) var<storage, read_write> nodeSplitCount: array<atomic<u32>>;
 @group(0) @binding(7) var<storage, read> sceneBuffer : array<Model>;
 @group(0) @binding(10) var<storage, read> bvhBuffer : array<BVHNode>;
@@ -123,19 +135,333 @@ fn getOctreeDepth(distance: f32) -> u32{
 	return min(u32(floor(log2(uniforms.scale / distance))), OCTREE_DEPTH_MAX);
 }
 
-//the lighting of the leaf at a hit point, for sampleRay of pathTrace.wgsl. The octree is a radiance cache.
-//Only a filled leaf of the hit surface counts: an interior node only has the lighting of one sample, taken when it was split,
-//which biased large blocks. Elsewhere (never seen, or a leaf filled from another face) the path goes on
+/*
+the feed hash map: world space cells of feedCellSize that the rays fill themselves, for the hit points the octree has no
+lighting for, like the feed cells of updateSpatialHash.wgsl. A hash map and not nodes of the octree: the octree only
+has the nodes of what the screen sees, a split from a ray would race with the splits of the cells, and collapseOctree.wgsl
+would free what is not seen.
+Per slot FEED_WORDS words: the checksum of the cell (0: empty), the frame a ray last looked at it, and its running
+average of the lighting (rgb) and the paths it holds (a) as 4 x f16
+ */
+const FEED_WORDS = 4u;
+const FEED_NONE = 0xFFFFFFFFu;
+//slots probed before a feed cell gives up
+const FEED_SEARCH_COUNT = 16u;
+
+//the index in nodeSplitCount of a word of a feed slot: after the split counts of the nodes
+fn getFeedWord(slot: u32, word: u32) -> u32 {
+	return arrayLength(&octreeBuffer) + slot * FEED_WORDS + word;
+}
+
+fn feedHash(x: u32) -> u32 {
+	let state = x * 747796405u + 2891336453u;
+	let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+	return (word >> 22u) ^ word;
+}
+
+/*
+the checksum and the first slot of the feed cell at p, of the face n is closest to: the axis with its sign, so the 2
+sides of a wall never share a cell. Offset along that axis, so a surface exactly on a cell boundary is in 1 cell.
+The same size for the whole scene and wherever the camera is, so the feed of a surface stays as the camera moves.
+The slot and the checksum are independent hashes, so 2 cells with the same checksum still need the same probe sequence
+ */
+fn getFeedKey(p: vec3<f32>, n: vec3<f32>) -> vec2<u32> {
+	let a = abs(n);
+	var axis = 2u;
+	if(a.x >= a.y && a.x >= a.z){
+		axis = 0u;
+	}else if(a.y >= a.z){
+		axis = 1u;
+	}
+	var direction = vec3(0.);
+	direction[axis] = select(-1., 1., n[axis] > 0.);
+	let face = axis * 2u + select(0u, 1u, n[axis] > 0.);
+	let cell = bitcast<vec3<u32>>(vec3<i32>(floor((p + direction * (uniforms.feedCellSize * .1)) / uniforms.feedCellSize)));
+	let slot = feedHash(cell.x + feedHash(cell.y + feedHash(cell.z + feedHash(face))));
+	let key = max(feedHash((cell.x * 73856093u) ^ feedHash((cell.y * 19349663u) ^ feedHash((cell.z * 83492791u) ^ ((face + 1u) * 0x9e3779b9u)))), 1u);
+	return vec2(key, slot % FEED_HASHMAP_SIZE);
+}
+
+fn findFeed(keySlot: vec2<u32>) -> u32 {
+	var slot = keySlot.y;
+	for(var i = 0u; i < FEED_SEARCH_COUNT; i++){
+		let existing = atomicLoad(&nodeSplitCount[getFeedWord(slot, 0u)]);
+		if(existing == keySlot.x){
+			return slot;
+		}
+		if(existing == 0u){
+			return FEED_NONE;
+		}
+		slot = (slot + 1u) % FEED_HASHMAP_SIZE;
+	}
+	return FEED_NONE;
+}
+
+//linear probing, like findOrInsert of updateSpatialHash.wgsl: up to the first empty slot, which a cell that is already
+//in the map is never after, then the first stale slot on the way (not looked at for feedEvictFrames), else the empty one
+fn findOrInsertFeed(keySlot: vec2<u32>) -> u32 {
+	let key = keySlot.x;
+	let frame = u32(uniforms.frame);
+	var slot = keySlot.y;
+	var evictSlot = FEED_NONE;
+	var evictKey = 0u;
+	var i = 0u;
+	for(; i < FEED_SEARCH_COUNT; i++){
+		let existing = atomicLoad(&nodeSplitCount[getFeedWord(slot, 0u)]);
+		if(existing == key){
+			atomicStore(&nodeSplitCount[getFeedWord(slot, 1u)], frame);
+			return slot;
+		}
+		if(existing == 0u){
+			break;
+		}
+		if(evictSlot == FEED_NONE && f32(frame - atomicLoad(&nodeSplitCount[getFeedWord(slot, 1u)])) > uniforms.feedEvictFrames){
+			evictSlot = slot;
+			evictKey = existing;
+		}
+		slot = (slot + 1u) % FEED_HASHMAP_SIZE;
+	}
+
+	if(evictSlot != FEED_NONE){
+		for(var j = 0u; j < 4u; j++){
+			let cmp = atomicCompareExchangeWeak(&nodeSplitCount[getFeedWord(evictSlot, 0u)], evictKey, key);
+			if(cmp.exchanged){
+				atomicStore(&nodeSplitCount[getFeedWord(evictSlot, 1u)], frame);
+				atomicStore(&nodeSplitCount[getFeedWord(evictSlot, 2u)], 0u);
+				atomicStore(&nodeSplitCount[getFeedWord(evictSlot, 3u)], 0u);
+				return evictSlot;
+			}
+			//another thread inserted the same cell there
+			if(cmp.old_value == key){
+				return evictSlot;
+			}
+			if(cmp.old_value != evictKey){
+				break;
+			}
+		}
+	}
+
+	//a spurious failure retries the same slot: skipping it would leave an empty slot before the key, where find stops
+	for(; i < FEED_SEARCH_COUNT; i++){
+		let cmp = atomicCompareExchangeWeak(&nodeSplitCount[getFeedWord(slot, 0u)], 0u, key);
+		if(cmp.exchanged || cmp.old_value == key){
+			atomicStore(&nodeSplitCount[getFeedWord(slot, 1u)], frame);
+			return slot;
+		}
+		if(cmp.old_value != 0u){
+			slot = (slot + 1u) % FEED_HASHMAP_SIZE;
+		}
+	}
+	return FEED_NONE;
+}
+
+fn loadFeedLighting(slot: u32) -> vec4<f32> {
+	return unpackLighting(vec2(atomicLoad(&nodeSplitCount[getFeedWord(slot, 2u)]), atomicLoad(&nodeSplitCount[getFeedWord(slot, 3u)])));
+}
+
+//a path of light (without the albedo of the feed cell) added to a feed cell, which holds up to rayFeedPaths of them.
+//Threads that feed the same cell race, a sample gets lost, which is harmless
+fn addFeedSample(slot: u32, lighting: vec3<f32>) {
+	let accumulated = loadFeedLighting(slot);
+	let packed = packLighting(vec4(mix(accumulated.rgb, lighting, 1. / (accumulated.a + 1.)), min(accumulated.a + 1., uniforms.rayFeedPaths)));
+	atomicStore(&nodeSplitCount[getFeedWord(slot, 2u)], packed.x);
+	atomicStore(&nodeSplitCount[getFeedWord(slot, 3u)], packed.y);
+}
+
+//the feed cell of the hit point of the last getCachedLighting that found no lighting in the octree.
+//feedOn: there is a feed (rayFeedPaths), the rest is only set then
+var<private> feedOn: bool;
+//what the feed cell holds, alpha 0 when it has no paths or no slot yet
+var<private> feedLighting: vec4<f32>;
+//its key, and its slot (FEED_NONE when it has none yet), see getFeedSlot
+var<private> feedKeySlot: vec2<u32>;
+var<private> feedSlot: u32;
+
+/*
+the paths of this workgroup all feed the cell of their first hit, also when it is full: set by compute_main for
+feedRefresh of the workgroups. So a full feed cell keeps following the lighting of what its paths end in: its first
+samples are from when the feed around it was still empty, with less bounce light, and the sun moves.
+Per workgroup and not per path: a path that feeds takes 1 or 2 rays more, and the threads of a workgroup wait on the
+one that takes the most
+ */
+var<private> feedRefreshing: bool;
+
+/*
+the lighting of the leaf at a hit point, for getIndirectPathSum. The octree is a radiance cache.
+Only a filled leaf of the hit surface counts: an interior node only has the lighting of one sample, taken when it was split,
+which biased large blocks.
+Elsewhere (out of view, never seen, a leaf filled from another face, outside the root) this returns none, and with the
+feed (rayFeedPaths) it sets the feed cell of the hit point: feedOn and the vars with it. A feed cell is kept while rays
+look at it, see feedEvictFrames
+ */
 fn getCachedLighting(hitPoint: vec3<f32>, n: vec3<f32>) -> vec4<f32> {
+	feedOn = false;
+	if(uniforms.cacheBounces == 0u){
+		return vec4(0.);
+	}
 	let p = hitPoint / OCTREE_ROOT_NODE_SIZE;
-	if(uniforms.cacheBounces != 0u && all(abs(p) < vec3(1.))){
+	if(all(abs(p) < vec3(1.))){
 		let leaf = getOctreeNode(p * .5 + .5);
 		if(nodeIsFilled(leaf.node) && dot(getNormal(leaf.node), n) >= uniforms.edgeNormalThreshold){
 			let accumulated = lightingBuffer[leaf.index];
 			return vec4(unpack2x16float(accumulated.x), unpack2x16float(accumulated.y).x, 1.);
 		}
 	}
+	if(uniforms.rayFeedPaths <= 0.){
+		return vec4(0.);
+	}
+
+	feedOn = true;
+	feedLighting = vec4(0.);
+	feedKeySlot = getFeedKey(hitPoint, n);
+	feedSlot = findFeed(feedKeySlot);
+	if(feedSlot == FEED_NONE){
+		return vec4(0.);
+	}
+	//the cell stays while rays look at it. Only written when it changes: the rays of many threads hit the same cells
+	let frame = u32(uniforms.frame);
+	let time = &nodeSplitCount[getFeedWord(feedSlot, 1u)];
+	if(atomicLoad(time) != frame){
+		atomicStore(time, frame);
+	}
+	feedLighting = loadFeedLighting(feedSlot);
 	return vec4(0.);
+}
+
+//the slot of the feed cell of the hit point of the last getCachedLighting, which set feedOn, to add a sample to. It is
+//added when it is not in the hash map yet. FEED_NONE when the hash map is full there
+fn getFeedSlot() -> u32 {
+	if(feedSlot != FEED_NONE){
+		return feedSlot;
+	}
+	return findOrInsertFeed(feedKeySlot);
+}
+
+/*
+the indirect lighting of getLighting of pathTrace.wgsl: the average of its sampleCount paths, as 1 loop over the rays of
+all of them, like getIndirectPathSum of updateSpatialHash.wgsl. A thread whose path ended starts on its next path in
+the same step, while the others bounce. The sun ray of a hit is a step of the loop too, a traceRay to the sky.
+This is the only traceRay call site of this shader: sampleRay is not used.
+
+A path ends at the first hit that the octree has lighting for (getCachedLighting). Where it has none:
+-without the feed (rayFeedPaths 0) it goes on like sampleRay, for up to bounceCount bounces
+-with the feed it is at most 2 rays and a sun ray, whatever bounceCount:
+ 1 the first hit ends in its feed cell, with the chance of the part of rayFeedPaths paths that cell holds. Else the
+   path feeds it: it goes on for 1 more ray (the sun sample with directionalProbability, else a bounce), and the light
+   that brings to the hit, without its albedo, is added to the cell as a sample of 1 path. A full cell is still fed
+   by the workgroups that refresh (feedRefreshing). The cell is added here
+ 2 the second hit ends in its feed cell when that holds anything, however few paths. Else in its sun light only, the
+   sun ray times directionalProbability, without a bounce. No cell is added here: the feed is what the surfaces in view
+   see, not the whole scene
+ */
+fn getIndirectPathSum(p: vec3<f32>, n: vec3<f32>, seed: vec2<u32>, sampleCount: u32) -> vec3<f32>{
+	var sum = vec3(0.);
+	if(sampleCount == 0u || uniforms.bounceCount <= 0){
+		return sum;
+	}
+	let sunColor = uniforms.directionalColor * uniforms.directionalBrightness;
+	var i = 0u;
+	var ro = p + n * MIN_DIST;
+	var rd = getIndirectDirection(n, seed, i, sampleCount);
+	var col = vec3(1.);
+	var bounce = 0;
+	//the ray is the sun ray of the last hit of the path
+	var sunRay = false;
+	//the feed cell the path feeds, and what the path lets through from that hit on: col without what is before it
+	var feedCell = FEED_NONE;
+	var feedCol = vec3(1.);
+
+	loop {
+		let hit = traceRay(ro + rd * MIN_DIST, rd);
+		let hitPoint = ro + rd * hit.distance;
+		let sky = isSky(hitPoint);
+		var ended = true;
+		//the light the path ends in
+		var light = vec3(0.);
+		if(sunRay){
+			//col has the cosine at the hit
+			if(sky){
+				light = sunColor;
+			}
+		}else if(sky){
+			light = hit.color;
+		}else{
+			let hitNormal = hit.normal;
+			col *= hit.color;
+			feedCol *= hit.color;
+			let cached = getCachedLighting(hitPoint, hitNormal);
+			if(cached.a > 0.){
+				light = cached.rgb;
+			}else{
+				let r = hash44ff(vec4(hitPoint, f32(i)));
+				//the path goes on with a sun ray that counts for this much, or with a bounce
+				var sunWeight = 0.;
+				var bounces = false;
+				if(!feedOn){
+					if(r.z < uniforms.directionalProbability){
+						sunWeight = 1.;
+					}else{
+						bounce++;
+						bounces = bounce < uniforms.bounceCount;
+					}
+				}else if(bounce == 0){
+					let endChance = select(feedLighting.a / uniforms.rayFeedPaths, 0., feedRefreshing);
+					if(r.w < endChance){
+						light = feedLighting.rgb;
+					}else{
+						feedCell = getFeedSlot();
+						feedCol = vec3(1.);
+						if(r.z < uniforms.directionalProbability){
+							sunWeight = 1.;
+						}else{
+							bounce = 1;
+							bounces = true;
+						}
+					}
+				}else if(feedLighting.a > 0.){
+					light = feedLighting.rgb;
+				}else{
+					sunWeight = uniforms.directionalProbability;
+				}
+
+				if(sunWeight > 0.){
+					let l = sampleSunDirection(r.xy);
+					let cosine = dot(hitNormal, l);
+					//a hit that faces away from the sun gets no sun ray
+					if(cosine > 0.){
+						col *= cosine * sunWeight;
+						feedCol *= cosine * sunWeight;
+						ro = hitPoint + hitNormal * MIN_DIST;
+						rd = l;
+						sunRay = true;
+						ended = false;
+					}
+				}else if(bounces){
+					ro = hitPoint;
+					rd = cosWeightedRandomHemisphereDirection(hitNormal, r.xy);
+					ended = false;
+				}
+			}
+		}
+
+		if(ended){
+			sum += col * light;
+			if(feedCell != FEED_NONE){
+				addFeedSample(feedCell, feedCol * light);
+				feedCell = FEED_NONE;
+			}
+			i++;
+			if(i >= sampleCount){
+				break;
+			}
+			ro = p + n * MIN_DIST;
+			rd = getIndirectDirection(n, seed, i, sampleCount);
+			col = vec3(1.);
+			bounce = 0;
+			sunRay = false;
+		}
+	}
+	return sum / f32(sampleCount);
 }
 
 /*
@@ -150,7 +476,8 @@ fn getLocalIndex(p: vec3<f32>, octreeDepth: u32) -> u32{
 
 @compute @workgroup_size(WORK_GROUP_SIZE_X, WORK_GROUP_SIZE_Y, 1)
 fn compute_main(
-  @builtin(global_invocation_id) GlobalInvocationID : vec3<u32>
+  @builtin(global_invocation_id) GlobalInvocationID : vec3<u32>,
+  @builtin(workgroup_id) workgroupID : vec3<u32>
 ) {
 	let cellID = GlobalInvocationID.xy;
 	//not the first 2 numbers of the hash: getLighting takes those as its white noise, the cell is its seed
@@ -190,6 +517,9 @@ fn compute_main(
 	let onEdge = nodeIsFilled(nodeResult.node) && dot(getNormal(nodeResult.node), normalDepth.xyz) < uniforms.edgeNormalThreshold;
 	let edgeOctreeDepth = min(targetOctreeDepth + uniforms.edgeSplitDepth, OCTREE_DEPTH_MAX);
 
+	//the node was split here, and gets the lighting of this sample as it never had any: see below
+	var split = false;
+	var fillSplit = false;
 	if(nodeResult.depth < targetOctreeDepth || (onEdge && nodeResult.depth < edgeOctreeDepth)){
 		//Only the first thread that brings nodeSplitCount[nodeIndex] from 0 to 1 passes
  		let splitCount = atomicAdd(&nodeSplitCount[nodeIndex], 1);
@@ -205,32 +535,46 @@ fn compute_main(
 			octreeBuffer[nodeIndex].worldPosition = packPositionAndSize(getNodeCenter(p, nodeResult.depth), 1. / f32(1u << nodeResult.depth));
 			octreeBuffer[nodeIndex].normal = 0u;
 			octreeBuffer[nodeIndex].firstChildIndex = firstChildIndex;
-			//the color stays as a fallback for the pixels that the empty children don't cover yet (see getFallbackLighting).
-			//A node that never had lighting gets the lighting of this sample, else a chain of splits leaves nothing to fall back on
-			if(nodeResult.node.color == 0u){
-				octreeBuffer[nodeIndex].color = packColor(getLighting(worldPosition, normalDepth.xyz, cellID, uniforms.sampleCount));
-				octreeBuffer[nodeIndex].colorNormal = packNormal(normalDepth.xyz);
-			}
 			//only the colorNormal of a filled node: a node without color is not on an edge
 			if(onEdge){
 				octreeBuffer[nodeIndex].colorNormal = nodeResult.node.colorNormal | EDGE_SPLIT_FLAG;
 			}
-			return;
+			split = true;
+			fillSplit = nodeResult.node.color == 0u;
+			if(!fillSplit){
+				return;
+			}
+		}else{
+			//the octree is full: the node stays a leaf and keeps accumulating, until collapseOctree.wgsl frees nodes
+			atomicStore(&nodeSplitCount[nodeIndex], 0u);
 		}
-		//the octree is full: the node stays a leaf and keeps accumulating, until collapseOctree.wgsl frees nodes
-		atomicStore(&nodeSplitCount[nodeIndex], 0u);
 	}
 
 	{
 		//the requested node exists. If it is a empty leaf node, then fill it. Then add lighting samples to it
-		let splitCount = atomicLoad(&nodeSplitCount[nodeIndex]);
-		if(splitCount > 0u || onEdge){
+		if(!split && (atomicLoad(&nodeSplitCount[nodeIndex]) > 0u || onEdge)){
 			return;
 		}
 
-		//the blue noise of the cell, not of the pixel: the pixel is random in the cell, so the noise of the pixels that
+		//the workgroups that refresh the feed, see feedRefreshing
+		let group = workgroupID.x ^ (workgroupID.y << 16u);
+		feedRefreshing = f32(feedHash(group ^ feedHash(u32(uniforms.frame))) >> 8u) / 16777216. < uniforms.feedRefresh;
+		//getLighting of pathTrace.wgsl with the paths of getIndirectPathSum, called once: a second call site of the
+		//path loop made this shader slower.
+		//The blue noise of the cell, not of the pixel: the pixel is random in the cell, so the noise of the pixels that
 		//neighbouring cells pick would be white
-		let lighting = getLighting(worldPosition, normalDepth.xyz, cellID, uniforms.sampleCount);
+		let lighting = combineLighting(getIndirectPathSum(worldPosition, normalDepth.xyz, cellID, uniforms.sampleCount), getSeededDirectLighting(worldPosition, normalDepth.xyz, cellID));
+
+		//the color of the split node stays as a fallback for the pixels that the empty children don't cover yet (see
+		//getFallbackLighting). A node that never had lighting gets the lighting of this sample, else a chain of splits
+		//leaves nothing to fall back on. Its colorNormal flagged as an edge above stays
+		if(split){
+			octreeBuffer[nodeIndex].color = packColor(lighting);
+			if(!onEdge){
+				octreeBuffer[nodeIndex].colorNormal = packNormal(normalDepth.xyz);
+			}
+			return;
+		}
 
 		//cells that hit the same node in the same frame race here and below. One of their samples gets lost, which is harmless
 

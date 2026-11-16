@@ -112,6 +112,8 @@ export default class OctreeUpdater {
   public readonly octreeRootNodeSize: number;
   public readonly nodeByteSize = 6 * 4;
   public readonly nodeCountMax = Math.pow(2, 22);
+  //the slots of the feed hash map, 4 words each after the split counts in nodeSplitCount, see getFeedKey in updateOctree.wgsl
+  public readonly feedHashMapSize = Math.pow(2, 20);
   //screen pixels along a side of the cells that each get a sample per frame, at a screen height of referenceHeight.
   //Small cells with few samples each: the same rays spread over more nodes, so each node gets samples more often
   private readonly referenceCellSize = 4;
@@ -140,6 +142,7 @@ export default class OctreeUpdater {
     this.updateShader.setConstant('CELL_SIZE', this.cellSize);
     this.updateShader.setConstant('OCTREE_ROOT_NODE_SIZE', this.octreeRootNodeSize);
     this.updateShader.setConstant('OCTREE_DEPTH_MAX', this.octreeDepthMax);
+    this.updateShader.setConstant('FEED_HASHMAP_SIZE', this.feedHashMapSize);
 
     this.octreeBuffer = this.renderer.createBuffer(this.nodeCountMax *  this.nodeByteSize, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC);
     this.updateShader.setBuffer('octreeBuffer', this.octreeBuffer);
@@ -150,7 +153,8 @@ export default class OctreeUpdater {
     this.lastWrittenIndex = this.renderer.createBuffer(4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC);
     this.updateShader.setBuffer('lastWrittenIndex', this.lastWrittenIndex);
 
-    this.nodeSplitCount = this.renderer.createBuffer(this.nodeCountMax * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC);
+    //per node, then the feed hash map: in 1 buffer as updateShader is at the limit of storage buffers
+    this.nodeSplitCount = this.renderer.createBuffer((this.nodeCountMax + this.feedHashMapSize * 4) * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC);
     this.updateShader.setBuffer('nodeSplitCount', this.nodeSplitCount);
 
     //rgb lighting + sample count as 4 x f16 per node
@@ -207,6 +211,21 @@ export default class OctreeUpdater {
     this.edgeSplitDepth = pg.addParamInt('edgeSplitDepth', 2, 0, 4, pgParams);
     //the paths end at their first hit, in the lighting the octree has there, instead of tracing bounceCount bounces
     pg.addParamBool('cacheBounces', true, pgParams);
+    //the feed: world space cells the rays fill themselves, for the hit points the octree has no lighting for (what is
+    //out of view). A path then ends at its first hit in the feed cell there, or feeds it with 1 more ray: at most 2
+    //rays and a sun ray, and bounceCount is not used. See getIndirectPathSum in updateOctree.wgsl.
+    //The paths a feed cell holds: a path ends in a cell with the chance of the part of them it has. Higher is less
+    //noise in the bounce light of what is out of view, but takes longer to fill and follows changes slower. 0: no feed,
+    //a path goes on for up to bounceCount bounces where the octree has no lighting
+    pg.addParamInt('rayFeedPaths', 128, 0, 1024, { ...pgParams, step:8 });
+    //the size of the feed cells in m. Larger fills faster and takes fewer slots, but the bounce light of what is out of
+    //view is blurrier and leaks between parallel surfaces closer than a cell
+    pg.addParamFloat('feedCellSize', .25, .02, 2, pgParams);
+    //the part of the workgroups whose paths feed a feed cell that is full too, instead of ending in it: a full cell
+    //keeps following the light around it as it fills, and as the sun moves. See feedRefreshing in updateOctree.wgsl
+    pg.addParamFloat('feedRefresh', 1 / 16, 0, 1, pgParams);
+    //the frames after which a feed cell no ray looked at can be taken by another one
+    pg.addParamFloat('feedEvictFrames', 120, 1, 1000, pgParams);
     //ancestors of the leaf that accumulate its samples too. An ancestor covers ~4x the screen area per level, so it converges faster
     pg.addParamInt('ancestorLevels', 2, 0, 4, pgParams);
     //the samples the nearest ancestor counts as in the lighting shown for a leaf, so leaves with few samples show the smoother ancestor
