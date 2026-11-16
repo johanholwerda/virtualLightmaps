@@ -2,7 +2,7 @@
 
 **[Live demo](https://johanholwerda.github.io/virtualLightmaps/)** (needs a browser with WebGPU)
 
-Irradiance cache by storing a virtual lightmap that is accessed by a hash map. The quality seems to be higher than that of other irradiance cache methods. This is useful when pre-baked lightmaps would take too much memory or when the lightmap needs to be updated because of a change in scene geometry or lighting. It has a LOD / mipmap structure so surfaces close by have more resolution than surfaces far away. The lightmap size and resolution in this example are set in a way that the lightmap can not hold the whole scene so moving the camera around will continuously create and evict lightmap tiles. A larger scene would not bring the lighting quality down.
+Irradiance cache by storing a virtual lightmap that is accessed by a hash map. The quality seems to be higher than that of other irradiance cache methods. This is useful when pre-baked lightmaps would take too much memory or when the lightmap needs to be updated because of a change in scene geometry or lighting, or when a high lightmap resolution is needed when a surface is seen from up close. It has a LOD / mipmap structure so surfaces close by have more resolution than surfaces far away. The lightmap size and resolution in this example are set in a way that the lightmap cannot hold the whole scene so moving the camera around will continuously create and evict lightmap tiles. A larger scene would not bring the lighting quality down. The scene is continuously pathtraced while lightmap tiles are not converged. 
 
 ![Colonnade with colored walls bleeding light](docs/images/colonnade.webp)
 
@@ -27,6 +27,7 @@ How it works:
 
 Object can be moved after clicking them, and the lightmap will update. The lightmap is also updated when the sun moves. Quality is lower while anything is moving. The lightmap might need a reset to remove artifacts. This part of the code can be improved.
 The sampling of the scene is done with raytracing and this is most of the cost. Other irradiance caching techniques have been added to compare cost / quality.
+
 ## Running
 
 ```

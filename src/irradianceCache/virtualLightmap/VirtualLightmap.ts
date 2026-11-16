@@ -32,10 +32,11 @@ const SIZE_OPTIONS = [1024, 1536, 2048, 3072, 4096];
 type QualitySetting = {lightmapSize: number, texelsPerPixel: number, sampleCount: number, referenceCellSize: number, traceSamplesMax: number, accumulationMax: number};
 const QUALITY_NAMES = ['low', 'medium', 'high', 'max'];
 const QUALITY_SETTINGS: QualitySetting[] = [
-  {lightmapSize: 1536, texelsPerPixel: .1, sampleCount: 8, referenceCellSize: 4, traceSamplesMax: 1024, accumulationMax: 512},
-  {lightmapSize: 2048, texelsPerPixel: .2, sampleCount: 16, referenceCellSize: 3, traceSamplesMax: 2048, accumulationMax: 1024},
-  {lightmapSize: 3072, texelsPerPixel: .4, sampleCount: 16, referenceCellSize: 2, traceSamplesMax: 4096, accumulationMax: 1024},
-  {lightmapSize: 4096, texelsPerPixel: .6, sampleCount: 32, referenceCellSize: 1, traceSamplesMax: 8192, accumulationMax: 2048},
+  //halving traceSamplesMax makes it be clamped to the max almost all the time. Lowering smooths out the frame duration spikes
+  {lightmapSize: 1536, texelsPerPixel: Math.sqrt(1/64), sampleCount: 8, referenceCellSize: Math.sqrt(32 ), traceSamplesMax: 512, accumulationMax: 2048},
+  {lightmapSize: 2048, texelsPerPixel: Math.sqrt(1/32), sampleCount: 16, referenceCellSize: Math.sqrt(16), traceSamplesMax: 1024, accumulationMax: 2048},
+  {lightmapSize: 3072, texelsPerPixel: Math.sqrt(1/16), sampleCount: 24, referenceCellSize: Math.sqrt(8), traceSamplesMax: 2048, accumulationMax: 2048},
+  {lightmapSize: 4096, texelsPerPixel: Math.sqrt(1/8), sampleCount: 32, referenceCellSize: Math.sqrt(4), traceSamplesMax: 8192, accumulationMax: 2048},
 ];
 const QUALITY_DEFAULT = QUALITY_NAMES.indexOf('high');
 
@@ -178,6 +179,8 @@ export default class VirtualLightmap {
       s.setBuffer('tileCount', this.tileCountBuffer);
       s.setBuffer('traceArgs', this.traceArgsBuffer);
     });
+    //read by the resolve for showTraceSamplesMax, on the gpu: no readback that waits for the frame
+    this.resolveMaterial.setBuffer('traceArgs', this.traceArgsBuffer);
   }
 
   //the buffers of the texels and the tiles, for the current size, and the constants that follow it. Replaces the ones
@@ -248,13 +251,17 @@ export default class VirtualLightmap {
     //screen pixels along a side of a cell, at a screen height of referenceHeight: see getCellSize. Lower is more cells,
     //so more texels get their sampleCount paths per frame: half the size is up to 4 times the paths. A change compiles
     //the update shaders again, as it is a constant there
-    this.referenceCellSize = pgUpdate.addParamInt('referenceCellSize', QUALITY_SETTINGS[QUALITY_DEFAULT].referenceCellSize, 1, 16);
+    this.referenceCellSize = pgUpdate.addParamFloat('referenceCellSize', QUALITY_SETTINGS[QUALITY_DEFAULT].referenceCellSize, 1, 16);
     //the most paths traced per frame, times 1000: the cells that trace times sampleCount. The cells over it wait for a
     //next frame, so a view of new texels (the camera turns fast) takes more frames to fill in instead of a long frame.
     //Also slows down the start and how fast the lighting follows the sun. A 16:9 screen has about 130000 cells at any
     //resolution (see getCellSize), so from 2074 at a sampleCount of 16 nothing is limited. See select_main in
     //updateVirtualLightmap.wgsl
     this.traceSamplesMax = pgUpdate.addParamInt('traceSamplesMax', QUALITY_SETTINGS[QUALITY_DEFAULT].traceSamplesMax, 64, 8192, { step:64 });
+    //a square in the top left corner: the cells that want to trace this frame as a part of what traceSamplesMax allows,
+    //black at 0 to white at 1, red when over it (cells are left out). Every frame, see getTraceLoadColor in
+    //resolveVirtualLightmap.wgsl. The tiles log has the same number, but only every 30 frames
+    pgUpdate.addParamBool('showTraceSamplesMax', false, { materials: [this.resolveMaterial] });
     //paths the running average of a texel holds, so a higher sampleCount gets there in fewer frames. Lower reacts faster to
     //changes, higher is less noisy. A texel that holds them gets no more paths while the light doesn't change, it is resolved.
     //At most 2048: the count is an f16, which has no gaps between its integers up to there.
@@ -404,6 +411,7 @@ export default class VirtualLightmap {
       s.setTexture('normalDepthTexture', gBuffer.views[1]);
       s.setTexture('modelTexture', gBuffer.views[2]);
     });
+    this.resolveMaterial.setFloat('traceCellsMax', traceCellsMax);
 
     if(sunChanging){
       this.refreshFrames = 0;
@@ -434,7 +442,9 @@ export default class VirtualLightmap {
       Promise.all([this.renderer.readBuffer(this.tileCountBuffer, Uint32Array), this.renderer.readBuffer(this.traceArgsBuffer, Uint32Array)]).then(([[count], traceArgs]) => {
         //the cells that traced, and the ones that wanted to: 1 per texel that is still converging. Less traced when
         //that is over traceSamplesMax
-        this.tileCountLog.setValue(`tiles: ${count} / ${this.tileCount} (${(count / this.tileCount * 100).toFixed(1)}%), tracing: ${Math.min(traceArgs[3], traceCellsMax)} of ${traceArgs[wantedIndex]} / ${cellCount} cells`);
+        //and the wanted ones as a part of traceCellsMax: over 1 is limited by traceSamplesMax
+        const wanted = traceArgs[wantedIndex];
+        this.tileCountLog.setValue(`tiles: ${count} / ${this.tileCount} (${(count / this.tileCount * 100).toFixed(1)}%), tracing: ${Math.min(traceArgs[3], traceCellsMax)} of ${wanted} / ${cellCount} cells, traceSamplesMax: ${(wanted / traceCellsMax).toFixed(2)}`);
         this.tileCountReading = false;
       });
     }

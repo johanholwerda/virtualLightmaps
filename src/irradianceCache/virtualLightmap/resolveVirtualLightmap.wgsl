@@ -27,8 +27,12 @@ struct Uniforms {
 	showLightmap : f32,
 	//a pixel reads 1 of the 2 levels around its level instead of both, see getLightingStochastic. Only with the TAA pass
 	stochasticLevel : f32,
-	//for the noise of stochasticLevel
+	//for the noise of stochasticLevel, and the parity of the counts in traceArgs
 	frame : f32,
+	//a square in the top left corner that shows how close the update is to traceSamplesMax, see getTraceLoadColor
+	showTraceSamplesMax : f32,
+	//the cells that can trace per frame, see VirtualLightmap.update
+	traceCellsMax : f32,
 	//for rayTraceScene.wgsl, see Scene.bind
 	lightDirection : vec3<f32>,
 	modelCount : f32,
@@ -54,6 +58,8 @@ struct VertexOutput {
 @group(0) @binding(6) var modelTexture: texture_2d<u32>;
 @group(0) @binding(7) var<storage, read> sceneBuffer : array<Model>;
 @group(0) @binding(10) var<storage, read> bvhBuffer : array<BVHNode>;
+//the args of the trace pass, see traceArgs in updateVirtualLightmap.wgsl. Only for showTraceSamplesMax
+@group(0) @binding(13) var<storage, read> traceArgs : array<u32, 8>;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
@@ -244,8 +250,31 @@ fn getLightmapColor(uv: vec2<f32>) -> vec3<f32> {
 	return toneMap(lighting.rgb * uniforms.exposure);
 }
 
+//showTraceSamplesMax: the cells that wanted to trace this frame as a part of traceCellsMax, black at 0 to white at 1, red
+//when over it: then cells were left out, see select_main in updateVirtualLightmap.wgsl. In a blue frame, so black shows
+//on a dark scene. Read here, after the update of the frame, so it is the count of this frame
+fn getTraceLoadColor(p: vec2<f32>, side: f32) -> vec3<f32> {
+	let border = max(1., side / 16.);
+	if(any(p < vec2(border)) || any(p >= vec2(side - border))){
+		return vec3(0., .4, 1.);
+	}
+	let wanted = f32(traceArgs[4u + (u32(uniforms.frame) & 1u)]);
+	if(wanted > uniforms.traceCellsMax){
+		return vec3(1., 0., 0.);
+	}
+	return vec3(wanted / max(uniforms.traceCellsMax, 1.));
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+	//before the other modes return, so it shows in all of them. The load only for the pixels of the square
+	if(uniforms.showTraceSamplesMax > .5){
+		let p = input.uv * uniforms.resolution;
+		let side = round(uniforms.resolution.y * .04);
+		if(all(p < vec2(side))){
+			return vec4(getTraceLoadColor(p, side), 1.);
+		}
+	}
 	if(uniforms.showLightmap > .5){
 		return vec4(getLightmapColor(input.uv), 1.);
 	}
