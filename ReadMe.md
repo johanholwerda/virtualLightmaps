@@ -1,9 +1,28 @@
 # virtualLightmap
 
-The irradiance cache example of the MediaMonks WebGPU framework (`src/sandbox/examples/irradianceCache`), isolated, with
-the virtual lightmap as the default draw mode. The surfels draw mode and the performance test are removed. `src/lib` holds
-only the framework files the example uses, imported as `monks-webgpu/...`.
+Irradiance cache by storing a virtual lightmap that is accessed by a hash map. The quality seems to be higher than that of other irradiance cache methods. This is useful when pre-baked lightmaps would take too much memory or when the scene geometry or lighting is dynamic. It has a LOD / mipmap structure so surfaces close by have more resolution than surfaces far away.
 
+![Colonnade with colored walls bleeding light](docs/images/colonnade.webp)
+
+![Courtyard with sunlight and colored boxes](docs/images/courtyard.webp)
+
+![Helmet model on the floor in sun and shadow](docs/images/helmet.webp)
+
+How it works:
+
+- The screen is split up in cells (4x4 pixels at 1080p, scaled with the resolution so the work doesn't grow with it).
+- Each cell gets a random pixel in the cell, a different one every frame.
+- From the surface under that pixel a hash is made of: the face of the model it is on (6 per primitive, a UV chart for a mesh), the texel level (texels sized so there are about `texelsPerPixel` texels per screen pixel, so coarser at a distance and at grazing angles) and the 8x8 texel tile of that face and level the pixel falls in.
+- The hash is looked up in a hash map with linear probing. A tile that isn't there yet is inserted in an empty slot, or takes the slot of a tile that was unused for `evictFrames` frames. The slot is also where the texels of the tile are in the lightmap, so 1 lookup gives the whole tile. Only the tiles that are seen get a place, at the resolution they are seen at.
+- The tiles of the 2 coarser levels above it are found or inserted too.
+- Every cell bids a random number on its texel, and only the highest bid of a texel traces this frame (the claim, select and trace passes). A texel that holds `accumulationMax` paths is converged and takes no more, so the cost follows the texels that are still converging, not the screen.
+- The winning cell traces `sampleCount` paths from its pixel. A path ends at its first hit, in the lighting the lightmap has there: the lightmap is its own radiance cache, so the bounces build up over the frames.
+- The result goes into the running average of the texel and of its coarser texels. A new texel starts from the lighting of the coarser one instead of from its first noisy sample.
+- The resolve looks up the texels of every pixel in the 2 levels around its level, interpolates the 4 nearest texels (never across faces) and blends the levels, or picks 1 by noise when TAA follows. A texel with few paths leans on the smoother coarser level.
+- A tile that is out of view keeps its lighting until its slot is needed. While the sun moves the texels hold a short history (`changeFrames`), and a dragged model only resets the texels it has influence on (around it and in its shadow).
+
+Object can be moved after clicking them, and the lightmap will update. The lightmap is also updated when the sun moves. Quality is lower while the scene or sun is moving. The lightmap might need a reset to remove artifacts. This part of the code can be improved.
+The sampling of the scene is done with raytracing and this is most of the cost. Other irradiance caching techniques have been added to compare cost / quality.
 ## Running
 
 ```
@@ -13,10 +32,3 @@ npm run dev
 
 Other commands: `npm run build` (to `dist`), `npm run preview` and `npm run typecheck`.
 
-## Layout
-
-- `src/main.ts`: starts the example
-- `src/irradianceCache/IrradianceCacheDraw.ts`: the draw modes and the GUI
-- `src/irradianceCache/virtualLightmap`: the virtual lightmap
-- `src/irradianceCache/data/BattleHelmet.json`: the helmet model of the scene
-- `src/lib`: the trimmed framework
