@@ -1,5 +1,7 @@
 # virtualLightmap
 
+**[Live demo](https://johanholwerda.github.io/virtualLightmaps/)** (needs a browser with WebGPU)
+
 Irradiance cache by storing a virtual lightmap that is accessed by a hash map. The quality seems to be higher than that of other irradiance cache methods. This is useful when pre-baked lightmaps would take too much memory or when the scene geometry or lighting is dynamic. It has a LOD / mipmap structure so surfaces close by have more resolution than surfaces far away.
 
 ![Colonnade with colored walls bleeding light](docs/images/colonnade.webp)
