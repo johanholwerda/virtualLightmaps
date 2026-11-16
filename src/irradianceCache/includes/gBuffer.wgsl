@@ -1,6 +1,6 @@
 //the normalDepth target of the gBuffer is rg32uint, 8 bytes instead of the 16 of rgba32float:
 //x the analytic distance along the camera ray as f32 bits, y the world normal octahedral encoded in 2x16 snorm.
-//needs monks-webgpu/shaders/normalPacking.wgsl
+//needs webGPU-framework/shaders/normalPacking.wgsl
 fn packNormalDepth(normal: vec3<f32>, depth: f32) -> vec2<u32> {
 	return vec2(bitcast<u32>(depth), packSnorm2x16(encodeNormal(normal)));
 }

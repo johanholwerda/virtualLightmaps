@@ -1,5 +1,5 @@
-import Mesh from 'monks-webgpu/renderer/mesh/Mesh';
-import Renderer from 'monks-webgpu/renderer/render/Renderer';
+import Mesh from 'webGPU-framework/renderer/mesh/Mesh';
+import Renderer from 'webGPU-framework/renderer/render/Renderer';
 import Vector3 from '../../../renderer/math/Vector3';
 
 // https://github.com/mrdoob/three.js/blob/dev/src/geometries/BoxGeometry.js

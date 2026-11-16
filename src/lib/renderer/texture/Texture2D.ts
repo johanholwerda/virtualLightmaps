@@ -1,6 +1,6 @@
 import Renderer from '../render/Renderer';
 import Texture, {TextureOptions} from './Texture';
-import {getFromTextureData, getImageSize} from 'monks-webgpu/utils/image/ImageUtils';
+import {getFromTextureData, getImageSize} from 'webGPU-framework/utils/image/ImageUtils';
 import LogGL from '../core/LogGL';
 
 export default class Texture2D extends Texture {

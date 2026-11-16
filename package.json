@@ -1,7 +1,7 @@
 {
   "name": "virtual-lightmap",
   "version": "1.0.0",
-  "description": "Virtual lightmap irradiance cache, isolated from the MediaMonks WebGPU framework",
+  "description": "Virtual lightmap irradiance cache, built on a lightweight WebGPU framework",
   "private": true,
   "type": "module",
   "scripts": {

@@ -11,7 +11,7 @@
     "moduleResolution": "bundler",
     "baseUrl": "./src/",
     "paths": {
-      "monks-webgpu/*": [
+      "webGPU-framework/*": [
         "lib/*"
       ]
     },

@@ -1,17 +1,17 @@
-import Renderer from "monks-webgpu/renderer/render/Renderer";
-import VertexFragmentShader from "monks-webgpu/renderer/material/VertexFragmentShader";
+import Renderer from "webGPU-framework/renderer/render/Renderer";
+import VertexFragmentShader from "webGPU-framework/renderer/material/VertexFragmentShader";
 import octreeRayMarch from './octreeRayMarch.wgsl?raw';
-import ParamGroup from "monks-webgpu/utils/params/ParamGroup";
-import Camera from "monks-webgpu/renderer/camera/Camera";
-import RenderTexture from "monks-webgpu/renderer/texture/RenderTexture";
-import Cube from "monks-webgpu/utils/mesh/geometries/Cube";
+import ParamGroup from "webGPU-framework/utils/params/ParamGroup";
+import Camera from "webGPU-framework/renderer/camera/Camera";
+import RenderTexture from "webGPU-framework/renderer/texture/RenderTexture";
+import Cube from "webGPU-framework/utils/mesh/geometries/Cube";
 import OctreeUpdater from "../octreeUpdater/OctreeUpdater";
 import octreeRayMarchShared from '../../includes/octreeRayMarch.wgsl?raw';
 import octreeNode from '../../includes/octreeNode.wgsl?raw';
-import toneMap from 'monks-webgpu/shaders/toneMap.wgsl?raw';
-import normalPacking from 'monks-webgpu/shaders/normalPacking.wgsl?raw';
+import toneMap from 'webGPU-framework/shaders/toneMap.wgsl?raw';
+import normalPacking from 'webGPU-framework/shaders/normalPacking.wgsl?raw';
 import gBufferPacking from '../../includes/gBuffer.wgsl?raw';
-import Vector3 from "monks-webgpu/renderer/math/Vector3";
+import Vector3 from "webGPU-framework/renderer/math/Vector3";
 import Scene from "../../scene/Scene";
 
 export default class OctreeRayMarch {

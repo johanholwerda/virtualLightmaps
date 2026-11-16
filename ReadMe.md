@@ -1,6 +1,6 @@
 # virtualLightmap
 
-**[Live demo](https://johanholwerda.github.io/virtualLightmaps/)** (needs a browser with WebGPU)
+**[Live demo](https://johanholwerda.github.io/virtualLightmaps/)** (needs a browser with WebGPU). Quality is set to high by default. Set to medium or low for better performance.
 
 Irradiance cache by storing a virtual lightmap that is accessed by a hash map. The quality seems to be higher than that of other irradiance cache methods. This is useful when pre-baked lightmaps would take too much memory or when the lightmap needs to be updated because of a change in scene geometry or lighting, or when a high lightmap resolution is needed when a surface is seen from up close. It has a LOD / mipmap structure so surfaces close by have more resolution than surfaces far away. The lightmap size and resolution in this example are set in a way that the lightmap cannot hold the whole scene so moving the camera around will continuously create and evict lightmap tiles. A larger scene would not bring the lighting quality down. The scene is continuously pathtraced while lightmap tiles are not converged. 
 

@@ -1,4 +1,4 @@
-//diffuse path tracing on top of rayTraceScene.wgsl, needs monks-webgpu/shaders/hash.wgsl.
+//diffuse path tracing on top of rayTraceScene.wgsl, needs webGPU-framework/shaders/hash.wgsl.
 //The including shader defines the radiance cache that the paths end in:
 //fn getCachedLighting(p: vec3<f32>, n: vec3<f32>) -> vec4<f32>
 //the light arriving at a hit point (rgb) when the cache has it there (a > 0). Without a cache it returns vec4(0.)

@@ -1,4 +1,4 @@
-import Vector3 from "monks-webgpu/renderer/math/Vector3";
+import Vector3 from "webGPU-framework/renderer/math/Vector3";
 
 /*
 SAH BVH over axis aligned boxes, with one box per leaf: the boxes are the primitives (see traceBVH in rayTraceScene.wgsl),

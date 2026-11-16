@@ -3,7 +3,7 @@ import LogGL from '../core/LogGL';
 import Texture from '../texture/Texture';
 import RenderTexture from '../texture/RenderTexture';
 import VertexFragmentShader from '../material/VertexFragmentShader';
-import blitShader from 'monks-webgpu/shaders/blit.wgsl?raw';
+import blitShader from 'webGPU-framework/shaders/blit.wgsl?raw';
 
 //renders into a mip level of one array layer of any texture, so the renderer can draw into it like into a RenderTexture
 class MipRenderTarget extends RenderTexture {

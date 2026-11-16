@@ -4,7 +4,7 @@ import Renderer from '../../renderer/render/Renderer';
 import Vector2 from '../../renderer/math/Vector2';
 import Camera from '../../renderer/camera/Camera';
 import {clamp01} from '../../renderer/utils/MathUtils';
-import Vector4 from "monks-webgpu/renderer/math/Vector4";
+import Vector4 from "webGPU-framework/renderer/math/Vector4";
 
 export default class StreetviewRotationController extends RotationController {
   public static MOUSE_MOVEMENT_CANCEL_TRIGGER: number = 0.0025;

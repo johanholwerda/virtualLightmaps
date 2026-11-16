@@ -1,6 +1,6 @@
-import Renderer from "monks-webgpu/renderer/render/Renderer";
-import WebGPUPreLoader from "monks-webgpu/renderer/core/WebGPUPreLoader";
-import LogGL from "monks-webgpu/renderer/core/LogGL";
+import Renderer from "webGPU-framework/renderer/render/Renderer";
+import WebGPUPreLoader from "webGPU-framework/renderer/core/WebGPUPreLoader";
+import LogGL from "webGPU-framework/renderer/core/LogGL";
 import IrradianceCacheDraw from "./IrradianceCacheDraw";
 
 export default class IrradianceCache {

@@ -1,6 +1,6 @@
-import ParamGroup from "monks-webgpu/utils/params/ParamGroup";
-import type { ParamMaterial } from "monks-webgpu/utils/params/ParamBase";
-import Camera from "monks-webgpu/renderer/camera/Camera";
+import ParamGroup from "webGPU-framework/utils/params/ParamGroup";
+import type { ParamMaterial } from "webGPU-framework/utils/params/ParamBase";
+import Camera from "webGPU-framework/renderer/camera/Camera";
 import ReprojectFill from "../shared/ReprojectFill";
 
 //the baseline to compare ReprojectAndFill with: every pixel gets 1 sample per frame, like groundTruth, and the

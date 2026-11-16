@@ -1,9 +1,9 @@
-import Renderer from "monks-webgpu/renderer/render/Renderer";
-import Camera from "monks-webgpu/renderer/camera/Camera";
-import Ray from "monks-webgpu/renderer/math/Ray";
-import Vector3 from "monks-webgpu/renderer/math/Vector3";
-import ParamBase from "monks-webgpu/utils/params/ParamBase";
-import Pivot, { PivotAxis, PivotMode } from "monks-webgpu/utils/pivot/Pivot";
+import Renderer from "webGPU-framework/renderer/render/Renderer";
+import Camera from "webGPU-framework/renderer/camera/Camera";
+import Ray from "webGPU-framework/renderer/math/Ray";
+import Vector3 from "webGPU-framework/renderer/math/Vector3";
+import ParamBase from "webGPU-framework/utils/params/ParamBase";
+import Pivot, { PivotAxis, PivotMode } from "webGPU-framework/utils/pivot/Pivot";
 import Scene, { Model } from "./Scene";
 
 /*

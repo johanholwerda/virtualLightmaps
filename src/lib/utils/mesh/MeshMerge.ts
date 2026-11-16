@@ -3,7 +3,7 @@ import Vector3 from '../../renderer/math/Vector3';
 import Transform from '../../renderer/scene/Transform';
 import Vector4 from '../../renderer/math/Vector4';
 import LogGL from '../../renderer/core/LogGL';
-import Matrix3x3 from "monks-webgpu/renderer/math/Matrix3x3";
+import Matrix3x3 from "webGPU-framework/renderer/math/Matrix3x3";
 
 export type MeshMergeOptions = {
   lightMapOffsets: Vector4[] | null;

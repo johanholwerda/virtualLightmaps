@@ -1,16 +1,16 @@
-import Renderer from "monks-webgpu/renderer/render/Renderer";
-import Mesh from "monks-webgpu/renderer/mesh/Mesh";
-import GeoSphere from "monks-webgpu/utils/mesh/geometries/GeoSphere";
-import Cube from "monks-webgpu/utils/mesh/geometries/Cube";
-import Cylinder from "monks-webgpu/utils/mesh/geometries/Cylinder";
-import Camera from "monks-webgpu/renderer/camera/Camera";
-import VertexFragmentShader from "monks-webgpu/renderer/material/VertexFragmentShader";
+import Renderer from "webGPU-framework/renderer/render/Renderer";
+import Mesh from "webGPU-framework/renderer/mesh/Mesh";
+import GeoSphere from "webGPU-framework/utils/mesh/geometries/GeoSphere";
+import Cube from "webGPU-framework/utils/mesh/geometries/Cube";
+import Cylinder from "webGPU-framework/utils/mesh/geometries/Cylinder";
+import Camera from "webGPU-framework/renderer/camera/Camera";
+import VertexFragmentShader from "webGPU-framework/renderer/material/VertexFragmentShader";
 import Scene, { PrimitiveType } from "../scene/Scene";
 import forward from "./forward.wgsl?raw";
 import forwardMesh from "./forwardMesh.wgsl?raw";
 import rayTraceScene from "../includes/rayTraceScene.wgsl?raw";
-import hash from 'monks-webgpu/shaders/hash.wgsl?raw';
-import normalPacking from 'monks-webgpu/shaders/normalPacking.wgsl?raw';
+import hash from 'webGPU-framework/shaders/hash.wgsl?raw';
+import normalPacking from 'webGPU-framework/shaders/normalPacking.wgsl?raw';
 import gBufferPacking from '../includes/gBuffer.wgsl?raw';
 
 export default class SceneRendererForward {

@@ -1,22 +1,22 @@
-import ComputeShader from "monks-webgpu/renderer/material/ComputeShader";
-import VertexFragmentShader from "monks-webgpu/renderer/material/VertexFragmentShader";
-import Renderer from "monks-webgpu/renderer/render/Renderer";
-import ParamGroup from "monks-webgpu/utils/params/ParamGroup";
-import RenderTexture from "monks-webgpu/renderer/texture/RenderTexture";
-import Camera from "monks-webgpu/renderer/camera/Camera";
-import ParamLog from "monks-webgpu/utils/params/ParamLog";
+import ComputeShader from "webGPU-framework/renderer/material/ComputeShader";
+import VertexFragmentShader from "webGPU-framework/renderer/material/VertexFragmentShader";
+import Renderer from "webGPU-framework/renderer/render/Renderer";
+import ParamGroup from "webGPU-framework/utils/params/ParamGroup";
+import RenderTexture from "webGPU-framework/renderer/texture/RenderTexture";
+import Camera from "webGPU-framework/renderer/camera/Camera";
+import ParamLog from "webGPU-framework/utils/params/ParamLog";
 import updateSpatialHash from './updateSpatialHash.wgsl?raw';
 import resolveSpatialHash from './resolveSpatialHash.wgsl?raw';
 import spatialHash from './spatialHash.wgsl?raw';
-import hash from 'monks-webgpu/shaders/hash.wgsl?raw';
-import toneMap from 'monks-webgpu/shaders/toneMap.wgsl?raw';
+import hash from 'webGPU-framework/shaders/hash.wgsl?raw';
+import toneMap from 'webGPU-framework/shaders/toneMap.wgsl?raw';
 import rayTraceScene from "../includes/rayTraceScene.wgsl?raw";
 import pathTrace from "../includes/pathTrace.wgsl?raw";
-import normalPacking from 'monks-webgpu/shaders/normalPacking.wgsl?raw';
+import normalPacking from 'webGPU-framework/shaders/normalPacking.wgsl?raw';
 import gBufferPacking from '../includes/gBuffer.wgsl?raw';
 import cameraRay from '../includes/cameraRay.wgsl?raw';
 import Scene from "../scene/Scene";
-import r2 from 'monks-webgpu/shaders/r2.wgsl?raw';
+import r2 from 'webGPU-framework/shaders/r2.wgsl?raw';
 
 /*
 the diffuse lighting cached in a world space spatial hash map, instead of in the octree of OctreeUpdater.

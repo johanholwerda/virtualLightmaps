@@ -1,14 +1,14 @@
-import Renderer from "monks-webgpu/renderer/render/Renderer";
-import VertexFragmentShader from "monks-webgpu/renderer/material/VertexFragmentShader";
-import ComputeShader from "monks-webgpu/renderer/material/ComputeShader";
-import ParamGroup from "monks-webgpu/utils/params/ParamGroup";
-import Camera from "monks-webgpu/renderer/camera/Camera";
-import RenderTexture from "monks-webgpu/renderer/texture/RenderTexture";
+import Renderer from "webGPU-framework/renderer/render/Renderer";
+import VertexFragmentShader from "webGPU-framework/renderer/material/VertexFragmentShader";
+import ComputeShader from "webGPU-framework/renderer/material/ComputeShader";
+import ParamGroup from "webGPU-framework/utils/params/ParamGroup";
+import Camera from "webGPU-framework/renderer/camera/Camera";
+import RenderTexture from "webGPU-framework/renderer/texture/RenderTexture";
 import OctreeUpdater from "../octreeUpdater/OctreeUpdater";
 import octreeDebug from './octreeDebug.wgsl?raw';
 import octreeDebugInstances from './octreeDebugInstances.wgsl?raw';
 import octreeNode from '../../includes/octreeNode.wgsl?raw';
-import normalPacking from 'monks-webgpu/shaders/normalPacking.wgsl?raw';
+import normalPacking from 'webGPU-framework/shaders/normalPacking.wgsl?raw';
 import gBufferPacking from '../../includes/gBuffer.wgsl?raw';
 
 /*

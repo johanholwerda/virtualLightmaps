@@ -1,14 +1,14 @@
-import Vector3 from "monks-webgpu/renderer/math/Vector3";
-import Transform from "monks-webgpu/renderer/scene/Transform";
-import Renderer from "monks-webgpu/renderer/render/Renderer";
-import WebGPUPreLoader from "monks-webgpu/renderer/core/WebGPUPreLoader";
-import ShaderBase from "monks-webgpu/renderer/material/ShaderBase";
-import LogGL from "monks-webgpu/renderer/core/LogGL";
+import Vector3 from "webGPU-framework/renderer/math/Vector3";
+import Transform from "webGPU-framework/renderer/scene/Transform";
+import Renderer from "webGPU-framework/renderer/render/Renderer";
+import WebGPUPreLoader from "webGPU-framework/renderer/core/WebGPUPreLoader";
+import ShaderBase from "webGPU-framework/renderer/material/ShaderBase";
+import LogGL from "webGPU-framework/renderer/core/LogGL";
 import ModelBVH from "./ModelBVH";
-import BlueNoiseTexture2D16Bits from "monks-webgpu/utils/texture/BlueNoiseTexture2D16Bits";
-import JSONLoader from "monks-webgpu/utils/loaders/JSONLoader";
+import BlueNoiseTexture2D16Bits from "webGPU-framework/utils/texture/BlueNoiseTexture2D16Bits";
+import JSONLoader from "webGPU-framework/utils/loaders/JSONLoader";
 import LightmapMesh from "./LightmapMesh";
-import Ray from "monks-webgpu/renderer/math/Ray";
+import Ray from "webGPU-framework/renderer/math/Ray";
 
 export enum PrimitiveType {
   SPHERE = 0,

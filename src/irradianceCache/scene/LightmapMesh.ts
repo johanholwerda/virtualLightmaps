@@ -1,5 +1,5 @@
-import Vector3 from "monks-webgpu/renderer/math/Vector3";
-import LogGL from "monks-webgpu/renderer/core/LogGL";
+import Vector3 from "webGPU-framework/renderer/math/Vector3";
+import LogGL from "webGPU-framework/renderer/core/LogGL";
 
 //the triangles a leaf of the BVH holds at most
 const LEAF_SIZE = 4;

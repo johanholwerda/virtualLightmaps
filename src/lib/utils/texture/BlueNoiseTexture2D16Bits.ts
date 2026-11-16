@@ -1,8 +1,8 @@
-import Texture2D from "monks-webgpu/renderer/texture/Texture2D";
-import Renderer from "monks-webgpu/renderer/render/Renderer";
-import IPreloadable from "monks-webgpu/renderer/core/IPreloadable";
-import WebGPUPreLoader from "monks-webgpu/renderer/core/WebGPUPreLoader";
-import decodePngRgba8 from "monks-webgpu/utils/image/decodePngRgba8";
+import Texture2D from "webGPU-framework/renderer/texture/Texture2D";
+import Renderer from "webGPU-framework/renderer/render/Renderer";
+import IPreloadable from "webGPU-framework/renderer/core/IPreloadable";
+import WebGPUPreLoader from "webGPU-framework/renderer/core/WebGPUPreLoader";
+import decodePngRgba8 from "webGPU-framework/utils/image/decodePngRgba8";
 import blueNoise2D16Bits from "./blueNoise2D16Bits.png";
 
 /**

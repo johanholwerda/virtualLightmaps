@@ -1,23 +1,23 @@
-import RenderTexture from "monks-webgpu/renderer/texture/RenderTexture";
-import Renderer from "monks-webgpu/renderer/render/Renderer";
-import ParamGroup from "monks-webgpu/utils/params/ParamGroup";
-import type { ParamMaterial } from "monks-webgpu/utils/params/ParamBase";
-import Matrix4x4 from "monks-webgpu/renderer/math/Matrix4x4";
-import Camera from "monks-webgpu/renderer/camera/Camera";
-import hash from 'monks-webgpu/shaders/hash.wgsl?raw';
-import Texture from "monks-webgpu/renderer/texture/Texture";
-import Texture2D from "monks-webgpu/renderer/texture/Texture2D";
-import ComputeShader from "monks-webgpu/renderer/material/ComputeShader";
+import RenderTexture from "webGPU-framework/renderer/texture/RenderTexture";
+import Renderer from "webGPU-framework/renderer/render/Renderer";
+import ParamGroup from "webGPU-framework/utils/params/ParamGroup";
+import type { ParamMaterial } from "webGPU-framework/utils/params/ParamBase";
+import Matrix4x4 from "webGPU-framework/renderer/math/Matrix4x4";
+import Camera from "webGPU-framework/renderer/camera/Camera";
+import hash from 'webGPU-framework/shaders/hash.wgsl?raw';
+import Texture from "webGPU-framework/renderer/texture/Texture";
+import Texture2D from "webGPU-framework/renderer/texture/Texture2D";
+import ComputeShader from "webGPU-framework/renderer/material/ComputeShader";
 import reproject from './reproject.wgsl?raw';
 import fill from './fill.wgsl?raw';
 import rayTraceScene from "../includes/rayTraceScene.wgsl?raw";
 import pathTrace from "../includes/pathTrace.wgsl?raw";
 import Scene from "../scene/Scene";
-import Vector3 from "monks-webgpu/renderer/math/Vector3";
-import normalPacking from 'monks-webgpu/shaders/normalPacking.wgsl?raw';
+import Vector3 from "webGPU-framework/renderer/math/Vector3";
+import normalPacking from 'webGPU-framework/shaders/normalPacking.wgsl?raw';
 import gBufferPacking from '../includes/gBuffer.wgsl?raw';
 import cameraRay from '../includes/cameraRay.wgsl?raw';
-import r2 from 'monks-webgpu/shaders/r2.wgsl?raw';
+import r2 from 'webGPU-framework/shaders/r2.wgsl?raw';
 
 //reprojects the lighting of the previous frame (reproject.wgsl) and path traces the new pixels and a refine budget of
 //the pixels with too few samples (fill.wgsl). ReprojectAndFill and TemporalAccumulate set the fill params and the

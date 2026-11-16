@@ -1,9 +1,9 @@
-import Vector3 from "monks-webgpu/renderer/math/Vector3";
-import ParamGroup from "monks-webgpu/utils/params/ParamGroup";
-import ParamBool from "monks-webgpu/utils/params/ParamBool";
-import ParamFloat from "monks-webgpu/utils/params/ParamFloat";
-import ParamColor from "monks-webgpu/utils/params/ParamColor";
-import ParamBase, { type ParamMaterial } from "monks-webgpu/utils/params/ParamBase";
+import Vector3 from "webGPU-framework/renderer/math/Vector3";
+import ParamGroup from "webGPU-framework/utils/params/ParamGroup";
+import ParamBool from "webGPU-framework/utils/params/ParamBool";
+import ParamFloat from "webGPU-framework/utils/params/ParamFloat";
+import ParamColor from "webGPU-framework/utils/params/ParamColor";
+import ParamBase, { type ParamMaterial } from "webGPU-framework/utils/params/ParamBase";
 import Scene from "./Scene";
 
 //the sun at its highest, the sunDirection the scene was made for (see the cubes in Scene.createBuilding)

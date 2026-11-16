@@ -1,9 +1,9 @@
-import WebGPUPreLoader from 'monks-webgpu/renderer/core/WebGPUPreLoader';
-import LogGL from 'monks-webgpu/renderer/core/LogGL';
-import KeyListener from 'monks-webgpu/utils/input/KeyListener';
-import {KEY_P} from 'monks-webgpu/utils/input/Key';
-import {saveCanvasToDisk} from 'monks-webgpu/utils/image/ImageUtils';
-import UncappedFrames from 'monks-webgpu/utils/UncappedFrames';
+import WebGPUPreLoader from 'webGPU-framework/renderer/core/WebGPUPreLoader';
+import LogGL from 'webGPU-framework/renderer/core/LogGL';
+import KeyListener from 'webGPU-framework/utils/input/KeyListener';
+import {KEY_P} from 'webGPU-framework/utils/input/Key';
+import {saveCanvasToDisk} from 'webGPU-framework/utils/image/ImageUtils';
+import UncappedFrames from 'webGPU-framework/utils/UncappedFrames';
 import {createDescriptionOverlay} from './DescriptionOverlay';
 import IrradianceCache from './irradianceCache/IrradianceCache';
 import './main.css';

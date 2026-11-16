@@ -6,7 +6,7 @@ export default defineConfig({
     base: './',
     resolve: {
         alias: {
-            'monks-webgpu': path.resolve(__dirname, './src/lib/'),
+            'webGPU-framework': path.resolve(__dirname, './src/lib/'),
         },
     },
     build: {

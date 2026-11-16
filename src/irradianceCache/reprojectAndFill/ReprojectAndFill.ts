@@ -1,7 +1,7 @@
-import ParamGroup from "monks-webgpu/utils/params/ParamGroup";
-import type { ParamMaterial } from "monks-webgpu/utils/params/ParamBase";
-import ParamInt from "monks-webgpu/utils/params/ParamInt";
-import ParamFloat from "monks-webgpu/utils/params/ParamFloat";
+import ParamGroup from "webGPU-framework/utils/params/ParamGroup";
+import type { ParamMaterial } from "webGPU-framework/utils/params/ParamBase";
+import ParamInt from "webGPU-framework/utils/params/ParamInt";
+import ParamFloat from "webGPU-framework/utils/params/ParamFloat";
 import ReprojectFill from "../shared/ReprojectFill";
 
 //reprojects the lighting of the previous frame and path traces the pixels that have no history or too few samples.

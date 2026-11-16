@@ -1,6 +1,6 @@
 import MouseListener from '../input/MouseListener';
 import Mesh from '../mesh/Mesh';
-import Quad from 'monks-webgpu/utils/mesh/geometries/Quad';
+import Quad from 'webGPU-framework/utils/mesh/geometries/Quad';
 import VertexFragmentShader from '../material/VertexFragmentShader';
 import ComputeShader from '../material/ComputeShader';
 import RenderTexture from '../texture/RenderTexture';
@@ -15,7 +15,7 @@ import DummyBindings from '../material/DummyBindings';
 import Texture from '../texture/Texture';
 import { RenderBundleCacheManager } from './RenderBundleCacheManager';
 import Profiler from './Profiler';
-import blitShader from 'monks-webgpu/shaders/blit.wgsl?raw';
+import blitShader from 'webGPU-framework/shaders/blit.wgsl?raw';
 import Color from '../math/Color';
 
 
